@@ -276,6 +276,20 @@ sample_app_quarkus: undeploy_sample_app_quarkus
 undeploy_sample_app_quarkus:
 	- $(CLUSTER_CLIENT) delete all -l app=quarkus-test
 
+.PHONY: sample_app_todo
+sample_app_todo: undeploy_sample_app_todo
+	# if postgres crash loops it probably is failing to chmod some data dir. temporary hackaround:
+	# oc adm policy add-scc-to-user anyuid -n $(oc project -q) -z default
+	oc new-app docker.io/library/postgres:13.1 POSTGRES_USER=restcrud POSTGRES_PASSWORD=restcrud POSTGRES_DB=rest-crud --name=quarkus-todo-db
+	$(call new-sample-app,quay.io/andrewazores/quarkus-todo:latest)
+	$(CLUSTER_CLIENT) patch svc/quarkus-todo -p '{"spec":{"$setElementOrder/ports":[{"port":8080},{"port":9999}],"ports":[{"name":"jfr-jmx","port":9999}]}}'
+	oc expose --port 8080 svc quarkus-todo
+
+.PHONY: undeploy_sample_app_todo
+undeploy_sample_app_todo:
+	- $(CLUSTER_CLIENT) delete all -l app=quarkus-todo
+	- $(CLUSTER_CLIENT) delete all -l app=quarkus-todo-db
+
 define new-sample-app
 @if [ ! "$(CLUSTER_CLIENT)" = "oc" ]; then echo "CLUSTER_CLIENT must be 'oc' for sample app deployments" && exit 1; fi
 $(CLUSTER_CLIENT) new-app $(1)
