@@ -20,6 +20,7 @@ import (
 	"strconv"
 
 	operatorv1beta2 "github.com/cryostatio/cryostat-operator/api/v1beta2"
+	"github.com/cryostatio/cryostat-operator/internal/controllers/constants"
 	"github.com/cryostatio/cryostat-operator/internal/controllers/model"
 	"github.com/cryostatio/cryostat-operator/internal/test"
 	corev1 "k8s.io/api/core/v1"
@@ -147,6 +148,12 @@ func (r *AgentWebhookTestResources) NewPodLogLevelLabel() *corev1.Pod {
 	return pod
 }
 
+func (r *AgentWebhookTestResources) NewPodSmartTriggersLabel() *corev1.Pod {
+	pod := r.NewPod()
+	pod.Labels["cryostat.io/smart-triggers"] = "triggers"
+	return pod
+}
+
 func (r *AgentWebhookTestResources) NewPodPortLabel() *corev1.Pod {
 	pod := r.NewPod()
 	pod.Labels["cryostat.io/callback-port"] = "9998"
@@ -238,6 +245,7 @@ type mutatedPodOptions struct {
 	harvesterTemplate string
 	harvesterExitAge  int32
 	harvesterExitSize int32
+	smartTriggers     string
 	scheme            string
 	resources         *corev1.ResourceRequirements
 	// Function to produce mutated container array
@@ -386,6 +394,12 @@ func (r *AgentWebhookTestResources) NewMutatedPodHarvesterTemplateSize() *corev1
 	})
 }
 
+func (r *AgentWebhookTestResources) NewMutatedPodWithSmartTriggers() *corev1.Pod {
+	return r.newMutatedPod(&mutatedPodOptions{
+		smartTriggers: "triggers",
+	})
+}
+
 func (r *AgentWebhookTestResources) NewMutatedPodResources() *corev1.Pod {
 	return r.newMutatedPod(&mutatedPodOptions{
 		resources: &corev1.ResourceRequirements{
@@ -444,11 +458,11 @@ func (r *AgentWebhookTestResources) newMutatedPod(options *mutatedPodOptions) *c
 					Name:            "cryostat-agent-init",
 					Image:           options.image,
 					ImagePullPolicy: options.pullPolicy,
-					Command:         []string{"cp", "-v", "/cryostat/agent/cryostat-agent-shaded.jar", "/tmp/cryostat-agent/cryostat-agent-shaded.jar"},
+					Command:         []string{"cp", "-v", "/cryostat/agent/cryostat-agent-shaded.jar", constants.AgentJarPath},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "cryostat-agent-init",
-							MountPath: "/tmp/cryostat-agent",
+							MountPath: constants.AgentEmptyDirBasePath,
 						},
 					},
 					SecurityContext: &corev1.SecurityContext{
@@ -490,6 +504,21 @@ func (r *AgentWebhookTestResources) newMutatedPod(options *mutatedPodOptions) *c
 					},
 				},
 			})
+	}
+
+	if len(options.smartTriggers) > 0 {
+		readOnlyMode := int32(0440)
+		pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
+			Name: "trigger-" + options.smartTriggers,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: options.smartTriggers,
+					},
+					DefaultMode: &readOnlyMode,
+				},
+			},
+		})
 	}
 
 	return pod
@@ -551,7 +580,7 @@ func (r *AgentWebhookTestResources) newMutatedContainer(original *corev1.Contain
 			},
 			{
 				Name:  options.javaOptionsName,
-				Value: options.javaOptionsValue + fmt.Sprintf("-javaagent:/tmp/cryostat-agent/cryostat-agent-shaded.jar=io.cryostat.agent.shaded.org.slf4j.simpleLogger.defaultLogLevel=%s", options.logLevel),
+				Value: options.javaOptionsValue + fmt.Sprintf("-javaagent:"+constants.AgentJarPath+"=io.cryostat.agent.shaded.org.slf4j.simpleLogger.defaultLogLevel=%s", options.logLevel),
 			},
 		}...),
 		Ports: []corev1.ContainerPort{
@@ -572,7 +601,7 @@ func (r *AgentWebhookTestResources) newMutatedContainer(original *corev1.Contain
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      "cryostat-agent-init",
-				MountPath: "/tmp/cryostat-agent",
+				MountPath: constants.AgentEmptyDirBasePath,
 				ReadOnly:  true,
 			},
 		},
@@ -645,6 +674,21 @@ func (r *AgentWebhookTestResources) newMutatedContainer(original *corev1.Contain
 				Value: "false",
 			},
 		)
+	}
+
+	if len(options.smartTriggers) > 0 {
+		mountLocation := constants.AgentEmptyDirBasePath + "/smart-triggers"
+		container.VolumeMounts = append(container.VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "trigger-" + options.smartTriggers,
+				MountPath: mountLocation,
+				ReadOnly:  true,
+			})
+		container.Env = append(container.Env,
+			corev1.EnvVar{
+				Name:  "CRYOSTAT_AGENT_SMART_TRIGGER_CONFIG_PATH",
+				Value: mountLocation,
+			})
 	}
 
 	if r.IsFIPS {

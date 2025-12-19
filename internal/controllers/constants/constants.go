@@ -59,23 +59,27 @@ const (
 	AgentProxyConfigFilePath string = "/etc/nginx-cryostat"
 	AgentProxyConfigFileName string = "nginx.conf"
 
+	AgentEmptyDirBasePath = "/tmp/cryostat-agent"
+	AgentJarPath          = AgentEmptyDirBasePath + "/cryostat-agent-shaded.jar"
+
 	// Labels applied by operator to track cross-namespace ownership
 	targetNamespaceCRLabelPrefix    = "operator.cryostat.io/"
 	TargetNamespaceCRNameLabel      = targetNamespaceCRLabelPrefix + "name"
 	TargetNamespaceCRNamespaceLabel = targetNamespaceCRLabelPrefix + "namespace"
 
 	// Labels for agent auto-configuration
-	agentLabelPrefix               = "cryostat.io/"
-	AgentLabelCryostatName         = agentLabelPrefix + "name"
-	AgentLabelCryostatNamespace    = agentLabelPrefix + "namespace"
-	AgentLabelLogLevel             = agentLabelPrefix + "log-level"
-	AgentLabelCallbackPort         = agentLabelPrefix + "callback-port"
-	AgentLabelContainer            = agentLabelPrefix + "container"
-	AgentLabelReadOnly             = agentLabelPrefix + "read-only"
-	AgentLabelJavaOptionsVar       = agentLabelPrefix + "java-options-var"
-	AgentLabelHarvesterTemplate    = agentLabelPrefix + "harvester-template"
-	AgentLabelHarvesterExitMaxAge  = agentLabelPrefix + "harvester-exit-max-age"
-	AgentLabelHarvesterExitMaxSize = agentLabelPrefix + "harvester-exit-max-size"
+	agentLabelPrefix                  = "cryostat.io/"
+	AgentLabelCryostatName            = agentLabelPrefix + "name"
+	AgentLabelCryostatNamespace       = agentLabelPrefix + "namespace"
+	AgentLabelLogLevel                = agentLabelPrefix + "log-level"
+	AgentLabelCallbackPort            = agentLabelPrefix + "callback-port"
+	AgentLabelContainer               = agentLabelPrefix + "container"
+	AgentLabelReadOnly                = agentLabelPrefix + "read-only"
+	AgentLabelJavaOptionsVar          = agentLabelPrefix + "java-options-var"
+	AgentLabelHarvesterTemplate       = agentLabelPrefix + "harvester-template"
+	AgentLabelHarvesterExitMaxAge     = agentLabelPrefix + "harvester-exit-max-age"
+	AgentLabelHarvesterExitMaxSize    = agentLabelPrefix + "harvester-exit-max-size"
+	AgentLabelSmartTriggersConfigMaps = agentLabelPrefix + "smart-triggers"
 
 	CryostatCATLSCommonName     = "cryostat-ca-cert-manager"
 	CryostatTLSCommonName       = "cryostat"
