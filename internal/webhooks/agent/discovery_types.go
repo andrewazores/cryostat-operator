@@ -16,7 +16,8 @@ package agent
 
 // DiscoveryMetadata represents metadata (labels and annotations) that should be
 // applied to the Agent's DiscoveryNode. This matches the format expected by the
-// Cryostat Agent's DiscoveryFileReader.
+// Cryostat Agent's DiscoveryFileReader, which will apply these to its internal
+// cryostat and platform maps as needed.
 type DiscoveryMetadata struct {
 	Labels      map[string]string `json:"labels"`
 	Annotations map[string]string `json:"annotations"`

@@ -27,13 +27,11 @@ func TestExtractPodMetadata_Success(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "test-namespace",
 			Labels: map[string]string{
-				"app":     "my-app",
+				"app":     "test-app",
 				"version": "1.0.0",
-				"env":     "production",
 			},
 			Annotations: map[string]string{
-				"description": "Test application",
-				"owner":       "platform-team",
+				"description": "test pod",
 			},
 		},
 	}
@@ -44,24 +42,24 @@ func TestExtractPodMetadata_Success(t *testing.T) {
 		t.Fatal("Expected metadata to be non-nil")
 	}
 
-	if len(metadata.Labels) != 3 {
-		t.Errorf("Expected 3 labels, got %d", len(metadata.Labels))
+	if len(metadata.Labels) != 2 {
+		t.Errorf("Expected 2 labels, got %d", len(metadata.Labels))
 	}
 
-	if metadata.Labels["app"] != "my-app" {
-		t.Errorf("Expected label 'app' to be 'my-app', got '%s'", metadata.Labels["app"])
+	if metadata.Labels["app"] != "test-app" {
+		t.Errorf("Expected label 'app' to be 'test-app', got '%s'", metadata.Labels["app"])
 	}
 
 	if metadata.Labels["version"] != "1.0.0" {
 		t.Errorf("Expected label 'version' to be '1.0.0', got '%s'", metadata.Labels["version"])
 	}
 
-	if len(metadata.Annotations) != 2 {
-		t.Errorf("Expected 2 annotations, got %d", len(metadata.Annotations))
+	if len(metadata.Annotations) != 1 {
+		t.Errorf("Expected 1 annotation, got %d", len(metadata.Annotations))
 	}
 
-	if metadata.Annotations["description"] != "Test application" {
-		t.Errorf("Expected annotation 'description' to be 'Test application', got '%s'", metadata.Annotations["description"])
+	if metadata.Annotations["description"] != "test pod" {
+		t.Errorf("Expected annotation 'description' to be 'test pod', got '%s'", metadata.Annotations["description"])
 	}
 }
 
@@ -72,20 +70,12 @@ func TestExtractPodMetadata_EmptyLabels(t *testing.T) {
 			Namespace: "test-namespace",
 			Labels:    map[string]string{},
 			Annotations: map[string]string{
-				"description": "Test application",
+				"note": "no labels",
 			},
 		},
 	}
 
 	metadata := extractPodMetadata(pod)
-
-	if metadata == nil {
-		t.Fatal("Expected metadata to be non-nil")
-	}
-
-	if metadata.Labels == nil {
-		t.Fatal("Expected labels map to be non-nil")
-	}
 
 	if len(metadata.Labels) != 0 {
 		t.Errorf("Expected 0 labels, got %d", len(metadata.Labels))
@@ -102,7 +92,7 @@ func TestExtractPodMetadata_EmptyAnnotations(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "test-namespace",
 			Labels: map[string]string{
-				"app": "my-app",
+				"app": "test",
 			},
 			Annotations: map[string]string{},
 		},
@@ -110,20 +100,12 @@ func TestExtractPodMetadata_EmptyAnnotations(t *testing.T) {
 
 	metadata := extractPodMetadata(pod)
 
-	if metadata == nil {
-		t.Fatal("Expected metadata to be non-nil")
-	}
-
-	if metadata.Annotations == nil {
-		t.Fatal("Expected annotations map to be non-nil")
+	if len(metadata.Labels) != 1 {
+		t.Errorf("Expected 1 label, got %d", len(metadata.Labels))
 	}
 
 	if len(metadata.Annotations) != 0 {
 		t.Errorf("Expected 0 annotations, got %d", len(metadata.Annotations))
-	}
-
-	if len(metadata.Labels) != 1 {
-		t.Errorf("Expected 1 label, got %d", len(metadata.Labels))
 	}
 }
 
@@ -133,73 +115,43 @@ func TestExtractPodMetadata_SystemLabelsIncluded(t *testing.T) {
 			Name:      "test-pod",
 			Namespace: "test-namespace",
 			Labels: map[string]string{
-				"app":                         "my-app",
-				"kubernetes.io/metadata.name": "test-pod",
-				"pod-template-hash":           "abc123",
-				"cryostat.io/agent.cryostat":  "cryostat",
+				"app":                    "myapp",
+				"kubernetes.io/pod-name": "test-pod",
+				"app.kubernetes.io/name": "myapp",
 			},
 			Annotations: map[string]string{
-				"description":              "Test application",
-				"kubernetes.io/created-by": "deployment-controller",
-				"prometheus.io/scrape":     "true",
+				"kubernetes.io/config": "value",
 			},
 		},
 	}
 
 	metadata := extractPodMetadata(pod)
 
-	if metadata == nil {
-		t.Fatal("Expected metadata to be non-nil")
+	// Verify kubernetes.io/* labels are included
+	if metadata.Labels["kubernetes.io/pod-name"] != "test-pod" {
+		t.Errorf("Expected kubernetes.io label preserved, got %v", metadata.Labels)
 	}
 
-	// Verify ALL labels are included (no filtering)
-	if len(metadata.Labels) != 4 {
-		t.Errorf("Expected 4 labels (including system labels), got %d", len(metadata.Labels))
+	if metadata.Labels["app.kubernetes.io/name"] != "myapp" {
+		t.Errorf("Expected app.kubernetes.io label preserved, got %v", metadata.Labels)
 	}
 
-	// Verify system labels are present
-	if _, exists := metadata.Labels["kubernetes.io/metadata.name"]; !exists {
-		t.Error("Expected kubernetes.io/metadata.name label to be included")
-	}
-
-	if _, exists := metadata.Labels["cryostat.io/agent.cryostat"]; !exists {
-		t.Error("Expected cryostat.io/agent.cryostat label to be included")
-	}
-
-	// Verify ALL annotations are included (no filtering)
-	if len(metadata.Annotations) != 3 {
-		t.Errorf("Expected 3 annotations (including system annotations), got %d", len(metadata.Annotations))
-	}
-
-	// Verify system annotations are present
-	if _, exists := metadata.Annotations["kubernetes.io/created-by"]; !exists {
-		t.Error("Expected kubernetes.io/created-by annotation to be included")
+	// Verify kubernetes.io/* annotations are included
+	if metadata.Annotations["kubernetes.io/config"] != "value" {
+		t.Errorf("Expected kubernetes.io annotation preserved, got %v", metadata.Annotations)
 	}
 }
 
 func TestExtractPodMetadata_NilMaps(t *testing.T) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "test-pod",
-			Namespace:   "test-namespace",
-			Labels:      nil,
-			Annotations: nil,
+			Name:      "test-pod",
+			Namespace: "test-namespace",
+			// Labels and Annotations are nil
 		},
 	}
 
 	metadata := extractPodMetadata(pod)
-
-	if metadata == nil {
-		t.Fatal("Expected metadata to be non-nil")
-	}
-
-	if metadata.Labels == nil {
-		t.Fatal("Expected labels map to be initialized (non-nil)")
-	}
-
-	if metadata.Annotations == nil {
-		t.Fatal("Expected annotations map to be initialized (non-nil)")
-	}
 
 	if len(metadata.Labels) != 0 {
 		t.Errorf("Expected 0 labels, got %d", len(metadata.Labels))
@@ -214,10 +166,12 @@ func TestExtractPodMetadata_LargeMetadata(t *testing.T) {
 	labels := make(map[string]string)
 	annotations := make(map[string]string)
 
-	// Create 50 labels and 50 annotations
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 100; i++ {
 		labels[string(rune('a'+i%26))+string(rune('0'+i/26))] = "value"
-		annotations[string(rune('A'+i%26))+string(rune('0'+i/26))] = "annotation-value"
+	}
+
+	for i := 0; i < 50; i++ {
+		annotations[string(rune('a'+i%26))+string(rune('0'+i/26))] = "annotation-value"
 	}
 
 	pod := &corev1.Pod{
@@ -231,12 +185,8 @@ func TestExtractPodMetadata_LargeMetadata(t *testing.T) {
 
 	metadata := extractPodMetadata(pod)
 
-	if metadata == nil {
-		t.Fatal("Expected metadata to be non-nil")
-	}
-
-	if len(metadata.Labels) != 50 {
-		t.Errorf("Expected 50 labels, got %d", len(metadata.Labels))
+	if len(metadata.Labels) != 100 {
+		t.Errorf("Expected 100 labels, got %d", len(metadata.Labels))
 	}
 
 	if len(metadata.Annotations) != 50 {

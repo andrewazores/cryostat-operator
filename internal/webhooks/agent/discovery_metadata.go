@@ -18,19 +18,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// extractPodMetadata extracts ALL labels and annotations from a Pod.
+// No filtering is applied - all labels and annotations are included, even kubernetes.io/* ones.
+// This ensures complete metadata visibility in Cryostat's discovery tree.
+// The Agent will apply these to its internal cryostat and platform maps as needed.
 func extractPodMetadata(pod *corev1.Pod) *DiscoveryMetadata {
-	metadata := &DiscoveryMetadata{
-		Labels:      make(map[string]string),
-		Annotations: make(map[string]string),
+	return &DiscoveryMetadata{
+		Labels:      copyLabels(pod.Labels),
+		Annotations: copyLabels(pod.Annotations),
 	}
-
-	for k, v := range pod.Labels {
-		metadata.Labels[k] = v
-	}
-
-	for k, v := range pod.Annotations {
-		metadata.Annotations[k] = v
-	}
-
-	return metadata
 }
