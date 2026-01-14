@@ -489,6 +489,17 @@ func (r *AgentWebhookTestResources) newMutatedPod(options *mutatedPodOptions) *c
 						},
 					},
 				},
+				{
+					Name: "cryostat-agent-discovery",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: "cryostat-agent-discovery-" + r.Name + "-webhook-test",
+							},
+							DefaultMode: &[]int32{0440}[0],
+						},
+					},
+				},
 			},
 		},
 	}
@@ -602,6 +613,11 @@ func (r *AgentWebhookTestResources) newMutatedContainer(original *corev1.Contain
 			{
 				Name:      "cryostat-agent-init",
 				MountPath: constants.AgentEmptyDirBasePath,
+				ReadOnly:  true,
+			},
+			{
+				Name:      "cryostat-agent-discovery",
+				MountPath: "/opt/cryostat.d/conf.d/discovery",
 				ReadOnly:  true,
 			},
 		},

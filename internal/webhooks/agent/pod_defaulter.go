@@ -372,6 +372,40 @@ func (r *podMutator) Default(ctx context.Context, obj runtime.Object) error {
 	}
 	container.Env = extended
 
+	// Create discovery ConfigMap for the Agent
+	discoveryConfigMap, err := createDiscoveryConfigMap(ctx, r.client, pod, false)
+	if err != nil {
+		return fmt.Errorf("failed to create discovery ConfigMap: %w", err)
+	}
+
+	// Create or update the ConfigMap
+	err = r.client.Create(ctx, discoveryConfigMap)
+	if err != nil {
+		// If it already exists, that's okay - it might be from a previous attempt
+		// We'll just use the existing one
+		r.log.Info("discovery ConfigMap may already exist, continuing", "name", discoveryConfigMap.Name, "error", err)
+	}
+
+	// Mount the discovery ConfigMap as a volume
+	readOnlyMode := int32(0440)
+	pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
+		Name: "cryostat-agent-discovery",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: discoveryConfigMap.Name,
+				},
+				DefaultMode: &readOnlyMode,
+			},
+		},
+	})
+
+	container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+		Name:      "cryostat-agent-discovery",
+		MountPath: "/opt/cryostat.d/conf.d/discovery",
+		ReadOnly:  true,
+	})
+
 	// Use GenerateName for logging if no explicit Name is given
 	podName := pod.Name
 	if len(podName) == 0 {

@@ -25,9 +25,10 @@ import (
 )
 
 // createDiscoveryConfigMap creates a ConfigMap containing hierarchy.json and metadata.json
-// for the Cryostat Agent to read. The ConfigMap is owned by the Pod so it gets cleaned up
-// when the Pod is deleted.
-func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.Pod) (*corev1.ConfigMap, error) {
+// for the Cryostat Agent to read. The ConfigMap is created without an owner reference since
+// the Pod doesn't exist yet during webhook mutation. A controller should add the owner reference
+// after the Pod is created.
+func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.Pod, addOwnerRef bool) (*corev1.ConfigMap, error) {
 	// Build hierarchy
 	hierarchy, err := buildDiscoveryHierarchy(ctx, c, pod)
 	if err != nil {
@@ -64,20 +65,28 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cmName,
 			Namespace: pod.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "v1",
-					Kind:       "Pod",
-					Name:       pod.Name,
-					UID:        pod.UID,
-					Controller: boolPtr(true),
-				},
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "cryostat-operator",
+				"app.kubernetes.io/component":  "cryostat-agent-discovery",
 			},
 		},
 		Data: map[string]string{
 			"hierarchy.json": string(hierarchyJSON),
 			"metadata.json":  string(metadataJSON),
 		},
+	}
+
+	// Add owner reference if requested (for tests)
+	if addOwnerRef && pod.UID != "" {
+		cm.OwnerReferences = []metav1.OwnerReference{
+			{
+				APIVersion: "v1",
+				Kind:       "Pod",
+				Name:       pod.Name,
+				UID:        pod.UID,
+				Controller: boolPtr(true),
+			},
+		}
 	}
 
 	return cm, nil
@@ -87,5 +96,3 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 func boolPtr(b bool) *bool {
 	return &b
 }
-
-// Made with Bob

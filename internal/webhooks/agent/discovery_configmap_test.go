@@ -56,7 +56,7 @@ func TestCreateDiscoveryConfigMap_Success(t *testing.T) {
 		WithObjects(namespace, pod).
 		Build()
 
-	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod)
+	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod, true)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -150,7 +150,7 @@ func TestCreateDiscoveryConfigMap_ValidJSON(t *testing.T) {
 		WithObjects(namespace, deployment, pod).
 		Build()
 
-	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod)
+	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod, true)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -204,7 +204,7 @@ func TestCreateDiscoveryConfigMap_Naming(t *testing.T) {
 		WithObjects(namespace, pod).
 		Build()
 
-	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod)
+	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod, true)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -245,7 +245,7 @@ func TestCreateDiscoveryConfigMap_EmptyMetadata(t *testing.T) {
 		WithObjects(namespace, pod).
 		Build()
 
-	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod)
+	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod, true)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -346,7 +346,7 @@ func TestCreateDiscoveryConfigMap_DeepHierarchy(t *testing.T) {
 		WithObjects(namespace, deployment, replicaSet, pod).
 		Build()
 
-	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod)
+	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod, true)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
