@@ -33,30 +33,30 @@ type DiscoveryNode struct {
 }
 
 // KubeNodeType represents Kubernetes resource types in the discovery hierarchy.
-// These match Cryostat's KubeDiscoveryNodeType enum values.
+// These match Cryostat's KubeDiscoveryNodeType enum values exactly.
+// Reference: https://github.com/cryostatio/cryostat/blob/main/src/main/java/io/cryostat/discovery/KubeDiscoveryNodeType.java
 type KubeNodeType string
 
 const (
-	NodeTypeNamespace             KubeNodeType = "Namespace"
-	NodeTypeDeployment            KubeNodeType = "Deployment"
-	NodeTypeReplicaSet            KubeNodeType = "ReplicaSet"
-	NodeTypeStatefulSet           KubeNodeType = "StatefulSet"
-	NodeTypeDaemonSet             KubeNodeType = "DaemonSet"
-	NodeTypeReplicationController KubeNodeType = "ReplicationController"
-	NodeTypePod                   KubeNodeType = "Pod"
-	NodeTypeDeploymentConfig      KubeNodeType = "DeploymentConfig" // OpenShift
+	// Cryostat's exact enum values for Kubernetes resources
+	KubeNodeTypeNamespace             KubeNodeType = "Namespace"             // Kubernetes Namespace
+	KubeNodeTypeDeployment            KubeNodeType = "Deployment"            // Deployment
+	KubeNodeTypeReplicaSet            KubeNodeType = "ReplicaSet"            // ReplicaSet
+	KubeNodeTypeStatefulSet           KubeNodeType = "StatefulSet"           // StatefulSet
+	KubeNodeTypeDaemonSet             KubeNodeType = "DaemonSet"             // DaemonSet
+	KubeNodeTypeReplicationController KubeNodeType = "ReplicationController" // ReplicationController
+	KubeNodeTypeJvmPod                KubeNodeType = "JVM_POD"               // Pod with JVM
+	KubeNodeTypeDeploymentConfig      KubeNodeType = "DeploymentConfig"      // OpenShift DeploymentConfig
 )
 
 // ExpectedOwnerKinds defines the priority order for selecting owner references
 // when multiple owners exist. This matches Cryostat's logic of taking the first
 // "expected" owner Kind from known NodeTypes.
 var ExpectedOwnerKinds = []KubeNodeType{
-	NodeTypeDeployment,
-	NodeTypeStatefulSet,
-	NodeTypeDaemonSet,
-	NodeTypeReplicaSet,
-	NodeTypeReplicationController,
-	NodeTypeDeploymentConfig,
+	KubeNodeTypeDeployment,
+	KubeNodeTypeStatefulSet,
+	KubeNodeTypeDaemonSet,
+	KubeNodeTypeReplicaSet,
+	KubeNodeTypeReplicationController,
+	KubeNodeTypeDeploymentConfig,
 }
-
-// Made with Bob

@@ -84,37 +84,37 @@ func queryForNode(
 	var err error
 
 	switch nodeType {
-	case NodeTypeDeployment:
+	case KubeNodeTypeDeployment:
 		obj := &appsv1.Deployment{}
 		err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj)
 		if err == nil {
 			labels = obj.Labels
 		}
-	case NodeTypeReplicaSet:
+	case KubeNodeTypeReplicaSet:
 		obj := &appsv1.ReplicaSet{}
 		err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj)
 		if err == nil {
 			labels = obj.Labels
 		}
-	case NodeTypeStatefulSet:
+	case KubeNodeTypeStatefulSet:
 		obj := &appsv1.StatefulSet{}
 		err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj)
 		if err == nil {
 			labels = obj.Labels
 		}
-	case NodeTypeDaemonSet:
+	case KubeNodeTypeDaemonSet:
 		obj := &appsv1.DaemonSet{}
 		err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj)
 		if err == nil {
 			labels = obj.Labels
 		}
-	case NodeTypeReplicationController:
+	case KubeNodeTypeReplicationController:
 		obj := &corev1.ReplicationController{}
 		err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj)
 		if err == nil {
 			labels = obj.Labels
 		}
-	case NodeTypePod:
+	case KubeNodeTypeJvmPod:
 		obj := &corev1.Pod{}
 		err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj)
 		if err == nil {
@@ -154,4 +154,126 @@ func copyLabels(labels map[string]string) map[string]string {
 		copy[k] = v
 	}
 	return copy
+}
+
+// buildDiscoveryHierarchy constructs the complete discovery hierarchy for a Pod.
+// Returns a tree structure: Namespace → [Deployment/StatefulSet/etc] → ... → Pod
+// This matches Cryostat's discovery model where the root is always the Namespace (Realm).
+func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.Pod) (*DiscoveryNode, error) {
+	// Build chain from Pod up to top-level owner
+	chain := []*DiscoveryNode{}
+
+	// Start with the Pod itself
+	podNode := &DiscoveryNode{
+		Name:     pod.Name,
+		NodeType: string(KubeNodeTypeJvmPod),
+		Labels:   copyLabels(pod.Labels),
+		Children: []DiscoveryNode{}, // Empty array, not nil
+	}
+	chain = append(chain, podNode)
+
+	// Chase owner references up the chain
+	currentObj := metav1.Object(pod)
+	for {
+		ownerNode, err := getOwnerNode(ctx, c, currentObj, pod.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		if ownerNode == nil {
+			// No more owners - end of chain
+			break
+		}
+
+		// Add owner to chain
+		chain = append(chain, ownerNode)
+
+		// Continue from this owner
+		// We need to fetch the actual object to get its owner references
+		var nextObj metav1.Object
+		switch ownerNode.NodeType {
+		case string(KubeNodeTypeDeployment):
+			deployment := &appsv1.Deployment{}
+			err := c.Get(ctx, types.NamespacedName{Name: ownerNode.Name, Namespace: pod.Namespace}, deployment)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					// Owner was deleted - stop here
+					break
+				}
+				return nil, err
+			}
+			nextObj = deployment
+		case string(KubeNodeTypeStatefulSet):
+			statefulSet := &appsv1.StatefulSet{}
+			err := c.Get(ctx, types.NamespacedName{Name: ownerNode.Name, Namespace: pod.Namespace}, statefulSet)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					break
+				}
+				return nil, err
+			}
+			nextObj = statefulSet
+		case string(KubeNodeTypeDaemonSet):
+			daemonSet := &appsv1.DaemonSet{}
+			err := c.Get(ctx, types.NamespacedName{Name: ownerNode.Name, Namespace: pod.Namespace}, daemonSet)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					break
+				}
+				return nil, err
+			}
+			nextObj = daemonSet
+		case string(KubeNodeTypeReplicaSet):
+			replicaSet := &appsv1.ReplicaSet{}
+			err := c.Get(ctx, types.NamespacedName{Name: ownerNode.Name, Namespace: pod.Namespace}, replicaSet)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					break
+				}
+				return nil, err
+			}
+			nextObj = replicaSet
+		default:
+			// Unknown type - stop here
+			break
+		}
+
+		if nextObj == nil {
+			break
+		}
+		currentObj = nextObj
+	}
+
+	// Fetch Namespace to get its labels
+	namespace := &corev1.Namespace{}
+	err := c.Get(ctx, types.NamespacedName{Name: pod.Namespace}, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create Namespace node as root
+	namespaceNode := &DiscoveryNode{
+		Name:     namespace.Name,
+		NodeType: string(KubeNodeTypeNamespace),
+		Labels:   copyLabels(namespace.Labels),
+		Children: []DiscoveryNode{},
+	}
+
+	// Build hierarchy from top (Namespace) down to Pod
+	// Chain is currently: [Pod, ReplicaSet, Deployment, ...]
+	// We need to reverse it and nest: Namespace → Deployment → ReplicaSet → Pod
+	currentNode := namespaceNode
+	for i := len(chain) - 1; i >= 0; i-- {
+		childNode := chain[i]
+		// Initialize Children array if needed
+		if childNode.Children == nil {
+			childNode.Children = []DiscoveryNode{}
+		}
+		currentNode.Children = append(currentNode.Children, *childNode)
+		// Move to the child for next iteration
+		if len(currentNode.Children) > 0 {
+			currentNode = &currentNode.Children[len(currentNode.Children)-1]
+		}
+	}
+
+	return namespaceNode, nil
 }
