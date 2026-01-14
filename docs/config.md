@@ -524,3 +524,90 @@ spec:
       - jdk-observe
     disableBuiltInPortNumbers: true # ignore default port number 9091
 ```
+
+
+### Cryostat Agent Discovery Metadata
+
+When the Cryostat Operator automatically configures Pods with the Cryostat Agent (via the `cryostat.io/name` and `cryostat.io/namespace` labels), it also generates discovery metadata files that help the Agent understand its position in the Kubernetes resource hierarchy. This metadata enables the Agent to provide richer context when registering with Cryostat.
+
+#### How It Works
+
+For each Pod that gets configured with the Cryostat Agent, the operator:
+
+1. **Traces the ownership chain**: Starting from the Pod, the operator follows owner references up through ReplicaSets, Deployments, StatefulSets, or DaemonSets to build a complete hierarchy.
+
+2. **Generates two JSON files**:
+   - `hierarchy.json`: Contains the full resource hierarchy from Namespace down to the Pod
+   - `metadata.json`: Contains all labels and annotations from the Pod
+
+3. **Creates a ConfigMap**: These files are stored in a ConfigMap named `cryostat-agent-discovery-{pod-name}` in the same namespace as the Pod.
+
+4. **Mounts the ConfigMap**: The ConfigMap is automatically mounted at `/tmp/cryostat-agent/discovery` in the Pod, where the Cryostat Agent can read it.
+
+#### Discovery Hierarchy Structure
+
+The `hierarchy.json` file contains a tree structure representing the Kubernetes resource hierarchy. For example, a Pod managed by a Deployment would have this structure:
+
+```json
+{
+  "name": "my-namespace",
+  "type": "Namespace",
+  "labels": {...},
+  "children": [
+    {
+      "name": "my-deployment",
+      "type": "Deployment",
+      "labels": {...},
+      "children": [
+        {
+          "name": "my-deployment-abc123",
+          "type": "ReplicaSet",
+          "labels": {...},
+          "children": [
+            {
+              "name": "my-deployment-abc123-xyz",
+              "type": "Pod",
+              "labels": {...},
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Metadata Structure
+
+The `metadata.json` file contains all labels and annotations from the Pod:
+
+```json
+{
+  "labels": {
+    "app": "my-app",
+    "version": "1.0.0",
+    "kubernetes.io/managed-by": "deployment"
+  },
+  "annotations": {
+    "prometheus.io/scrape": "true",
+    "deployment.kubernetes.io/revision": "1"
+  }
+}
+```
+
+**Note**: ALL labels and annotations are included, including system labels like `kubernetes.io/*`. This provides complete visibility for Cryostat's discovery and filtering capabilities.
+
+#### ConfigMap Lifecycle
+
+The discovery ConfigMap is created when the Pod is mutated by the webhook, but it is created **without an owner reference** to the Pod (since the Pod doesn't exist yet at mutation time). This means:
+
+- The ConfigMap will persist even if the Pod is deleted
+- You may need to manually clean up old discovery ConfigMaps if Pods are frequently recreated
+- A future enhancement will add a controller to manage ConfigMap lifecycle automatically
+
+#### No Configuration Required
+
+This feature is automatically enabled for all Pods that are configured with the Cryostat Agent. No additional configuration is needed in the `Cryostat` custom resource.
+
+The Cryostat Agent automatically detects and reads these discovery files when they are present, using them to enhance its registration information with the Cryostat server.

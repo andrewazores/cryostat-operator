@@ -402,7 +402,7 @@ func (r *podMutator) Default(ctx context.Context, obj runtime.Object) error {
 
 	container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
 		Name:      "cryostat-agent-discovery",
-		MountPath: "/opt/cryostat.d/conf.d/discovery",
+		MountPath: "/tmp/cryostat-agent/discovery",
 		ReadOnly:  true,
 	})
 

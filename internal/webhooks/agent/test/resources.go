@@ -617,7 +617,7 @@ func (r *AgentWebhookTestResources) newMutatedContainer(original *corev1.Contain
 			},
 			{
 				Name:      "cryostat-agent-discovery",
-				MountPath: "/opt/cryostat.d/conf.d/discovery",
+				MountPath: "/tmp/cryostat-agent/discovery",
 				ReadOnly:  true,
 			},
 		},
