@@ -19,6 +19,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -79,7 +80,6 @@ func queryForNode(
 ) (*DiscoveryNode, error) {
 	nodeType := KubeNodeType(kind)
 
-	// Fetch the Kubernetes resource and extract labels
 	var labels map[string]string
 	var err error
 
@@ -114,26 +114,35 @@ func queryForNode(
 		if err == nil {
 			labels = obj.Labels
 		}
-	case KubeNodeTypeJvmPod:
+	case KubeNodeTypePod:
 		obj := &corev1.Pod{}
 		err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj)
 		if err == nil {
 			labels = obj.Labels
 		}
+	case KubeNodeTypeEndpoint:
+		obj := &corev1.Endpoints{}
+		err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj)
+		if err == nil {
+			labels = obj.Labels
+		}
+	case KubeNodeTypeEndpointSlice:
+		obj := &discoveryv1.EndpointSlice{}
+		err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, obj)
+		if err == nil {
+			labels = obj.Labels
+		}
 	default:
-		// Unknown kind - return nil to break chain
 		return nil, nil
 	}
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Owner was deleted - return nil to break chain
 			return nil, nil
 		}
 		return nil, err
 	}
 
-	// Create DiscoveryNode matching Cryostat's structure
 	node := &DiscoveryNode{
 		Name:     name,
 		NodeType: string(nodeType),
@@ -144,7 +153,6 @@ func queryForNode(
 	return node, nil
 }
 
-// copyLabels creates a deep copy of a label map.
 func copyLabels(labels map[string]string) map[string]string {
 	if labels == nil {
 		return make(map[string]string)
@@ -158,7 +166,7 @@ func copyLabels(labels map[string]string) map[string]string {
 
 // buildDiscoveryHierarchy constructs the complete discovery hierarchy for a Pod.
 // Returns a tree structure: Namespace → [Deployment/StatefulSet/etc] → ... → Pod
-// This matches Cryostat's discovery model where the root is always the Namespace (Realm).
+// This matches Cryostat's discovery model where the root is always the Namespace.
 func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.Pod) (*DiscoveryNode, error) {
 	// Build chain from Pod up to top-level owner
 	chain := []*DiscoveryNode{}
@@ -166,7 +174,7 @@ func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.P
 	// Start with the Pod itself
 	podNode := &DiscoveryNode{
 		Name:     pod.Name,
-		NodeType: string(KubeNodeTypeJvmPod),
+		NodeType: string(KubeNodeTypePod),
 		Labels:   copyLabels(pod.Labels),
 		Children: []DiscoveryNode{}, // Empty array, not nil
 	}
@@ -232,6 +240,36 @@ func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.P
 				return nil, err
 			}
 			nextObj = replicaSet
+		case string(KubeNodeTypeReplicationController):
+			replicationController := &corev1.ReplicationController{}
+			err := c.Get(ctx, types.NamespacedName{Name: ownerNode.Name, Namespace: pod.Namespace}, replicationController)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					break
+				}
+				return nil, err
+			}
+			nextObj = replicationController
+		case string(KubeNodeTypeEndpoint):
+			endpoint := &corev1.Endpoints{}
+			err := c.Get(ctx, types.NamespacedName{Name: ownerNode.Name, Namespace: pod.Namespace}, endpoint)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					break
+				}
+				return nil, err
+			}
+			nextObj = endpoint
+		case string(KubeNodeTypeEndpointSlice):
+			endpointSlice := &discoveryv1.EndpointSlice{}
+			err := c.Get(ctx, types.NamespacedName{Name: ownerNode.Name, Namespace: pod.Namespace}, endpointSlice)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					break
+				}
+				return nil, err
+			}
+			nextObj = endpointSlice
 		default:
 			// Unknown type - stop here
 			break

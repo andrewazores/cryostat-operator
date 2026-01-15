@@ -413,8 +413,8 @@ func TestCreateDiscoveryConfigMap_DeepHierarchy(t *testing.T) {
 	if podNode.Name != "backend-api-7f8c9d-xk2lp" {
 		t.Errorf("Expected pod name 'backend-api-7f8c9d-xk2lp', got '%s'", podNode.Name)
 	}
-	if podNode.NodeType != string(KubeNodeTypeJvmPod) {
-		t.Errorf("Expected pod NodeType 'JVM_POD', got '%s'", podNode.NodeType)
+	if podNode.NodeType != string(KubeNodeTypePod) {
+		t.Errorf("Expected pod NodeType 'Pod', got '%s'", podNode.NodeType)
 	}
 	if podNode.Labels["custom-label"] != "custom-value" {
 		t.Errorf("Expected pod label 'custom-label=custom-value', got %v", podNode.Labels)

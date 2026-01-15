@@ -552,8 +552,8 @@ func TestBuildDiscoveryHierarchy_FullChain(t *testing.T) {
 	}
 
 	pod_node := replicaset_node.Children[0]
-	if pod_node.NodeType != string(KubeNodeTypeJvmPod) {
-		t.Errorf("Expected child NodeType to be JVM_POD, got %s", pod_node.NodeType)
+	if pod_node.NodeType != string(KubeNodeTypePod) {
+		t.Errorf("Expected child NodeType to be Pod, got %s", pod_node.NodeType)
 	}
 	if pod_node.Name != "my-pod" {
 		t.Errorf("Expected child Name to be 'my-pod', got %s", pod_node.Name)
@@ -621,8 +621,8 @@ func TestBuildDiscoveryHierarchy_NoOwners(t *testing.T) {
 	}
 
 	pod_node := hierarchy.Children[0]
-	if pod_node.NodeType != string(KubeNodeTypeJvmPod) {
-		t.Errorf("Expected child NodeType to be JVM_POD, got %s", pod_node.NodeType)
+	if pod_node.NodeType != string(KubeNodeTypePod) {
+		t.Errorf("Expected child NodeType to be Pod, got %s", pod_node.NodeType)
 	}
 	if pod_node.Name != "standalone-pod" {
 		t.Errorf("Expected child Name to be 'standalone-pod', got %s", pod_node.Name)
@@ -706,8 +706,8 @@ func TestBuildDiscoveryHierarchy_StatefulSet(t *testing.T) {
 	}
 
 	pod_node := statefulset_node.Children[0]
-	if pod_node.NodeType != string(KubeNodeTypeJvmPod) {
-		t.Errorf("Expected child NodeType to be JVM_POD, got %s", pod_node.NodeType)
+	if pod_node.NodeType != string(KubeNodeTypePod) {
+		t.Errorf("Expected child NodeType to be Pod, got %s", pod_node.NodeType)
 	}
 }
 

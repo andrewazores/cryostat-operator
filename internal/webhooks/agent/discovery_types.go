@@ -53,13 +53,15 @@ type KubeNodeType string
 const (
 	// Cryostat's exact enum values for Kubernetes resources
 	KubeNodeTypeNamespace             KubeNodeType = "Namespace"             // Kubernetes Namespace
-	KubeNodeTypeDeployment            KubeNodeType = "Deployment"            // Deployment
-	KubeNodeTypeReplicaSet            KubeNodeType = "ReplicaSet"            // ReplicaSet
 	KubeNodeTypeStatefulSet           KubeNodeType = "StatefulSet"           // StatefulSet
 	KubeNodeTypeDaemonSet             KubeNodeType = "DaemonSet"             // DaemonSet
+	KubeNodeTypeDeployment            KubeNodeType = "Deployment"            // Deployment
+	KubeNodeTypeReplicaSet            KubeNodeType = "ReplicaSet"            // ReplicaSet
 	KubeNodeTypeReplicationController KubeNodeType = "ReplicationController" // ReplicationController
-	KubeNodeTypeJvmPod                KubeNodeType = "JVM_POD"               // Pod with JVM
+	KubeNodeTypePod                   KubeNodeType = "Pod"                   // Pod with JVM
 	KubeNodeTypeDeploymentConfig      KubeNodeType = "DeploymentConfig"      // OpenShift DeploymentConfig
+	KubeNodeTypeEndpoint              KubeNodeType = "Endpoint"              // Kubernetes Endpoint
+	KubeNodeTypeEndpointSlice         KubeNodeType = "EndpointSlice"         // Kubernetes EndpointSlice
 )
 
 // ExpectedOwnerKinds defines the priority order for selecting owner references
