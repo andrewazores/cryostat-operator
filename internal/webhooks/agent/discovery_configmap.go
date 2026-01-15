@@ -53,11 +53,11 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 	// Generate ConfigMap name
 	// Format: cryostat-agent-discovery-{pod-name}
 	// Truncate if necessary to stay within Kubernetes name limits (253 chars)
-	cmName := fmt.Sprintf("cryostat-agent-discovery-%s", pod.Name)
+	cmName := fmt.Sprintf("%s%s", DiscoveryConfigMapPrefix, pod.Name)
 	if len(cmName) > 253 {
 		// Truncate pod name portion to fit
-		maxPodNameLen := 253 - len("cryostat-agent-discovery-")
-		cmName = fmt.Sprintf("cryostat-agent-discovery-%s", pod.Name[:maxPodNameLen])
+		maxPodNameLen := 253 - len(DiscoveryConfigMapPrefix)
+		cmName = fmt.Sprintf("%s%s", DiscoveryConfigMapPrefix, pod.Name[:maxPodNameLen])
 	}
 
 	// Create ConfigMap
@@ -66,8 +66,8 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 			Name:      cmName,
 			Namespace: pod.Namespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "cryostat-operator",
-				"app.kubernetes.io/component":  "cryostat-agent-discovery",
+				"app.kubernetes.io/managed-by": DiscoveryConfigMapManagedBy,
+				"app.kubernetes.io/component":  DiscoveryConfigMapComponent,
 			},
 		},
 		Data: map[string]string{

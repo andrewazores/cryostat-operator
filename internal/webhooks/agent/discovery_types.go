@@ -14,6 +14,18 @@
 
 package agent
 
+// Discovery ConfigMap constants
+const (
+	// DiscoveryConfigMapComponent is the component label value for discovery ConfigMaps
+	DiscoveryConfigMapComponent = "cryostat-agent-discovery"
+
+	// DiscoveryConfigMapPrefix is the prefix for discovery ConfigMap names
+	DiscoveryConfigMapPrefix = DiscoveryConfigMapComponent + "-"
+
+	// DiscoveryConfigMapManagedBy is the managed-by label value for discovery ConfigMaps
+	DiscoveryConfigMapManagedBy = "cryostat-operator"
+)
+
 // DiscoveryMetadata represents metadata (labels and annotations) that should be
 // applied to the Agent's DiscoveryNode. This matches the format expected by the
 // Cryostat Agent's DiscoveryFileReader, which will apply these to its internal
