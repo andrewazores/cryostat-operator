@@ -8,9 +8,18 @@ rules:
   - ""
   resources:
   - configmaps
+  verbs:
+  - '*'
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - events
   - persistentvolumeclaims
-  - pods
   - secrets
   - serviceaccounts
   - services
@@ -22,6 +31,15 @@ rules:
   resources:
   - namespaces
   verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - '*'
   - get
   - list
   - watch
