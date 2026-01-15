@@ -67,15 +67,23 @@ func (r *DiscoveryConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Extract Pod name from ConfigMap name
-	// Format: cryostat-agent-discovery-{pod-name}
-	podName := strings.TrimPrefix(configMap.Name, agent.DiscoveryConfigMapPrefix)
-	if podName == configMap.Name {
+	// Format: cryostat-agent-discovery-{pod-name} or
+	//         cryostat-agent-discovery-{pod-generateName}-{random-suffix}
+	nameWithoutPrefix := strings.TrimPrefix(configMap.Name, agent.DiscoveryConfigMapPrefix)
+	if nameWithoutPrefix == configMap.Name {
 		// ConfigMap name doesn't match expected format
 		log.Info("ConfigMap name doesn't match expected format", "name", configMap.Name)
 		return ctrl.Result{}, nil
 	}
 
+	// The nameWithoutPrefix could be:
+	// 1. The exact pod name (e.g., "my-pod-abc123")
+	// 2. A pod GenerateName with random suffix (e.g., "my-pod--xyz45")
+	// We need to try both possibilities to find the actual pod
+	podName := nameWithoutPrefix
+
 	// Fetch the Pod
+	// First, try to get the pod directly by name (handles case 1: exact pod name)
 	pod := &corev1.Pod{}
 	err = r.Get(ctx, types.NamespacedName{
 		Name:      podName,
@@ -83,11 +91,48 @@ func (r *DiscoveryConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}, pod)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Pod doesn't exist yet, requeue
-			log.Info("Pod not found yet, will retry", "pod", podName)
-			return ctrl.Result{Requeue: true}, nil
+			// Pod not found with exact name. This could be case 2: ConfigMap created with
+			// GenerateName + random suffix before pod was created. Try to find pod by
+			// matching the GenerateName prefix (everything before the last hyphen and random suffix).
+			// Example: "my-pod--xyz45" -> look for pods starting with "my-pod-"
+
+			// Try to extract potential GenerateName by removing the last segment after hyphen
+			lastHyphen := strings.LastIndex(podName, "-")
+			if lastHyphen > 0 {
+				potentialGenerateName := podName[:lastHyphen+1] // Include the trailing hyphen
+
+				// List all pods in the namespace
+				podList := &corev1.PodList{}
+				if err := r.List(ctx, podList, client.InNamespace(configMap.Namespace)); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to list pods: %w", err)
+				}
+
+				// Find pod with matching GenerateName prefix
+				var foundPod *corev1.Pod
+				for i := range podList.Items {
+					p := &podList.Items[i]
+					if strings.HasPrefix(p.Name, potentialGenerateName) {
+						foundPod = p
+						break
+					}
+				}
+
+				if foundPod != nil {
+					pod = foundPod
+					log.Info("Found pod by GenerateName prefix", "configMap", configMap.Name, "pod", pod.Name)
+				} else {
+					// Still no pod found, requeue
+					log.Info("Pod not found yet, will retry", "expectedName", podName, "generateNamePrefix", potentialGenerateName)
+					return ctrl.Result{Requeue: true}, nil
+				}
+			} else {
+				// No hyphen found, just requeue
+				log.Info("Pod not found yet, will retry", "pod", podName)
+				return ctrl.Result{Requeue: true}, nil
+			}
+		} else {
+			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
 	}
 
 	// Add owner reference
