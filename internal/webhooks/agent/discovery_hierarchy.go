@@ -16,6 +16,8 @@ package agent
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -78,6 +80,13 @@ func queryForNode(
 	name string,
 	kind string,
 ) (*DiscoveryNode, error) {
+	if name == "" {
+		return nil, fmt.Errorf("resource name cannot be empty for kind %s in namespace %s", kind, namespace)
+	}
+	if namespace == "" {
+		return nil, fmt.Errorf("namespace cannot be empty for resource %s of kind %s", name, kind)
+	}
+
 	nodeType := KubeNodeType(kind)
 
 	var labels map[string]string
@@ -168,12 +177,25 @@ func copyLabels(labels map[string]string) map[string]string {
 // Returns a tree structure: Namespace → [Deployment/StatefulSet/etc] → ... → Pod
 // This matches Cryostat's discovery model where the root is always the Namespace.
 func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.Pod) (*DiscoveryNode, error) {
+	podName := pod.Name
+	if podName == "" {
+		podName = pod.GenerateName
+	}
+	podName = strings.TrimRight(podName, "-_.")
+
+	if podName == "" {
+		return nil, fmt.Errorf("pod name and generateName are both empty")
+	}
+	if pod.Namespace == "" {
+		return nil, fmt.Errorf("pod namespace cannot be empty for pod %s", podName)
+	}
+
 	// Build chain from Pod up to top-level owner
 	chain := []*DiscoveryNode{}
 
 	// Start with the Pod itself
 	podNode := &DiscoveryNode{
-		Name:     pod.Name,
+		Name:     podName,
 		NodeType: string(KubeNodeTypePod),
 		Labels:   copyLabels(pod.Labels),
 		Children: []DiscoveryNode{}, // Empty array, not nil

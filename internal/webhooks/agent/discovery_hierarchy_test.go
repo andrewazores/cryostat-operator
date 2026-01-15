@@ -20,8 +20,11 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -841,5 +844,324 @@ func TestBuildDiscoveryHierarchy_EmptyChildrenArray(t *testing.T) {
 	// Verify Children is empty
 	if len(pod_node.Children) != 0 {
 		t.Errorf("Expected Pod Children to be empty array, got %d children", len(pod_node.Children))
+	}
+}
+
+// TestBuildDiscoveryHierarchy_EmptyPodName tests validation when Pod has empty name but has generateName
+func TestBuildDiscoveryHierarchy_EmptyPodName_WithGenerateName(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-namespace",
+		},
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:         "", // Empty name - but generateName is set
+			GenerateName: "my-pod-",
+			Namespace:    "test-namespace",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(namespace, pod).
+		Build()
+
+	hierarchy, err := buildDiscoveryHierarchy(context.Background(), fakeClient, pod)
+
+	if err != nil {
+		t.Fatalf("Expected no error when generateName is set, got %v", err)
+	}
+
+	// Verify the Pod node uses generateName with trailing punctuation trimmed
+	podNode := hierarchy.Children[0]
+	if podNode.Name != "my-pod" {
+		t.Errorf("Expected pod name to be 'my-pod' (from generateName with trailing hyphen trimmed), got '%s'", podNode.Name)
+	}
+}
+
+// TestBuildDiscoveryHierarchy_EmptyPodNameAndGenerateName tests validation when both name and generateName are empty
+func TestBuildDiscoveryHierarchy_EmptyPodNameAndGenerateName(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-namespace",
+		},
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:         "", // Empty name
+			GenerateName: "", // Empty generateName - invalid
+			Namespace:    "test-namespace",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(namespace, pod).
+		Build()
+
+	_, err := buildDiscoveryHierarchy(context.Background(), fakeClient, pod)
+
+	if err == nil {
+		t.Fatal("Expected error for pod with empty name and generateName, got nil")
+	}
+
+	expectedMsg := "pod name and generateName are both empty"
+	if err.Error() != expectedMsg {
+		t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+	}
+}
+
+// TestBuildDiscoveryHierarchy_EmptyPodNamespace tests validation when Pod has empty namespace
+func TestBuildDiscoveryHierarchy_EmptyPodNamespace(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "", // Empty namespace - invalid
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		Build()
+
+	_, err := buildDiscoveryHierarchy(context.Background(), fakeClient, pod)
+
+	if err == nil {
+		t.Fatal("Expected error for pod with empty namespace, got nil")
+	}
+
+	expectedMsg := "pod namespace cannot be empty for pod my-pod"
+	if err.Error() != expectedMsg {
+		t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+	}
+}
+
+// TestQueryForNode_EmptyName tests validation when resource name is empty
+func TestQueryForNode_EmptyName(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	_, err := queryForNode(context.Background(), fakeClient, "test-namespace", "", "Deployment")
+
+	if err == nil {
+		t.Fatal("Expected error for empty resource name, got nil")
+	}
+
+	expectedMsg := "resource name cannot be empty for kind Deployment in namespace test-namespace"
+	if err.Error() != expectedMsg {
+		t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+	}
+}
+
+// TestQueryForNode_EmptyNamespace tests validation when namespace is empty
+func TestQueryForNode_EmptyNamespace(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = appsv1.AddToScheme(scheme)
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	_, err := queryForNode(context.Background(), fakeClient, "", "my-deployment", "Deployment")
+
+	if err == nil {
+		t.Fatal("Expected error for empty namespace, got nil")
+	}
+
+	expectedMsg := "namespace cannot be empty for resource my-deployment of kind Deployment"
+	if err.Error() != expectedMsg {
+		t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+	}
+}
+
+// TestQueryForNode_AllResourceTypes tests that all supported resource types can be queried
+func TestQueryForNode_AllResourceTypes(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+	_ = discoveryv1.AddToScheme(scheme)
+
+	testCases := []struct {
+		name     string
+		kind     string
+		nodeType KubeNodeType
+		obj      client.Object
+	}{
+		{
+			name:     "Deployment",
+			kind:     "Deployment",
+			nodeType: KubeNodeTypeDeployment,
+			obj: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-resource",
+					Namespace: "test-namespace",
+					Labels:    map[string]string{"app": "test"},
+				},
+			},
+		},
+		{
+			name:     "ReplicaSet",
+			kind:     "ReplicaSet",
+			nodeType: KubeNodeTypeReplicaSet,
+			obj: &appsv1.ReplicaSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-resource",
+					Namespace: "test-namespace",
+					Labels:    map[string]string{"app": "test"},
+				},
+			},
+		},
+		{
+			name:     "StatefulSet",
+			kind:     "StatefulSet",
+			nodeType: KubeNodeTypeStatefulSet,
+			obj: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-resource",
+					Namespace: "test-namespace",
+					Labels:    map[string]string{"app": "test"},
+				},
+			},
+		},
+		{
+			name:     "DaemonSet",
+			kind:     "DaemonSet",
+			nodeType: KubeNodeTypeDaemonSet,
+			obj: &appsv1.DaemonSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-resource",
+					Namespace: "test-namespace",
+					Labels:    map[string]string{"app": "test"},
+				},
+			},
+		},
+		{
+			name:     "ReplicationController",
+			kind:     "ReplicationController",
+			nodeType: KubeNodeTypeReplicationController,
+			obj: &corev1.ReplicationController{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-resource",
+					Namespace: "test-namespace",
+					Labels:    map[string]string{"app": "test"},
+				},
+			},
+		},
+		{
+			name:     "Pod",
+			kind:     "Pod",
+			nodeType: KubeNodeTypePod,
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-resource",
+					Namespace: "test-namespace",
+					Labels:    map[string]string{"app": "test"},
+				},
+			},
+		},
+		{
+			name:     "Endpoint",
+			kind:     "Endpoint",
+			nodeType: KubeNodeTypeEndpoint,
+			obj: &corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-resource",
+					Namespace: "test-namespace",
+					Labels:    map[string]string{"app": "test"},
+				},
+			},
+		},
+		{
+			name:     "EndpointSlice",
+			kind:     "EndpointSlice",
+			nodeType: KubeNodeTypeEndpointSlice,
+			obj: &discoveryv1.EndpointSlice{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-resource",
+					Namespace: "test-namespace",
+					Labels:    map[string]string{"app": "test"},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(tc.obj).
+				Build()
+
+			node, err := queryForNode(context.Background(), fakeClient, "test-namespace", "test-resource", tc.kind)
+
+			if err != nil {
+				t.Fatalf("Expected no error for %s, got %v", tc.name, err)
+			}
+
+			if node == nil {
+				t.Fatalf("Expected non-nil node for %s", tc.name)
+			}
+
+			if node.Name != "test-resource" {
+				t.Errorf("Expected node name 'test-resource', got '%s'", node.Name)
+			}
+
+			if node.NodeType != string(tc.nodeType) {
+				t.Errorf("Expected node type '%s', got '%s'", tc.nodeType, node.NodeType)
+			}
+
+			if node.Labels["app"] != "test" {
+				t.Errorf("Expected label 'app=test', got %v", node.Labels)
+			}
+
+			if node.Children == nil {
+				t.Error("Expected non-nil Children array")
+			}
+
+			if len(node.Children) != 0 {
+				t.Errorf("Expected empty Children array, got %d children", len(node.Children))
+			}
+		})
+	}
+}
+
+// TestBuildDiscoveryHierarchy_NamespaceNotFound tests error handling when namespace doesn't exist
+func TestBuildDiscoveryHierarchy_NamespaceNotFound(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	// Create client without the namespace
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		Build()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "nonexistent-namespace",
+		},
+	}
+
+	_, err := buildDiscoveryHierarchy(context.Background(), fakeClient, pod)
+
+	if err == nil {
+		t.Fatal("Expected error when namespace not found, got nil")
+	}
+
+	// Should get a NotFound error from the API
+	if !errors.IsNotFound(err) {
+		t.Errorf("Expected NotFound error, got %v", err)
 	}
 }
