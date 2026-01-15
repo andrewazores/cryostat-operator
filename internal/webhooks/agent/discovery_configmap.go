@@ -18,7 +18,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/cryostatio/cryostat-operator/internal/controllers/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,22 +31,18 @@ import (
 // the Pod doesn't exist yet during webhook mutation. A controller should add the owner reference
 // after the Pod is created.
 func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.Pod, addOwnerRef bool) (*corev1.ConfigMap, error) {
-	// Build hierarchy
 	hierarchy, err := buildDiscoveryHierarchy(ctx, c, pod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build discovery hierarchy: %w", err)
 	}
 
-	// Marshal hierarchy to JSON
 	hierarchyJSON, err := json.Marshal(hierarchy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal hierarchy: %w", err)
 	}
 
-	// Extract metadata
 	metadata := extractPodMetadata(pod)
 
-	// Marshal metadata to JSON
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
@@ -52,15 +50,27 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 
 	// Generate ConfigMap name
 	// Format: cryostat-agent-discovery-{pod-name}
-	// Truncate if necessary to stay within Kubernetes name limits (253 chars)
-	cmName := fmt.Sprintf("%s%s", DiscoveryConfigMapPrefix, pod.Name)
-	if len(cmName) > 253 {
-		// Truncate pod name portion to fit
-		maxPodNameLen := 253 - len(DiscoveryConfigMapPrefix)
-		cmName = fmt.Sprintf("%s%s", DiscoveryConfigMapPrefix, pod.Name[:maxPodNameLen])
+	// If pod.Name is empty (during webhook mutation before pod creation),
+	// use GenerateName with a random suffix
+	var cmName string
+	if pod.Name != "" {
+		cmName = fmt.Sprintf("%s%s", DiscoveryConfigMapPrefix, pod.Name)
+	} else if pod.GenerateName != "" {
+		// Use GenerateName with random suffix to ensure uniqueness
+		// This ConfigMap will be orphaned and cleaned up by the controller
+		// once the actual pod name is known
+		osUtils := &common.DefaultOSUtils{}
+		cmName = fmt.Sprintf("%s%s-%s", DiscoveryConfigMapPrefix, pod.GenerateName, osUtils.GenPasswd(5))
+	} else {
+		return nil, fmt.Errorf("pod has neither Name nor GenerateName set")
 	}
 
-	// Create ConfigMap
+	const nameLengthLimit = 253
+	if len(cmName) > nameLengthLimit {
+		cmName = cmName[:nameLengthLimit]
+		cmName = strings.TrimRight(cmName, "-.")
+	}
+
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cmName,
@@ -76,23 +86,18 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 		},
 	}
 
-	// Add owner reference if requested (for tests)
 	if addOwnerRef && pod.UID != "" {
+		controller := true
 		cm.OwnerReferences = []metav1.OwnerReference{
 			{
 				APIVersion: "v1",
 				Kind:       "Pod",
 				Name:       pod.Name,
 				UID:        pod.UID,
-				Controller: boolPtr(true),
+				Controller: &controller,
 			},
 		}
 	}
 
 	return cm, nil
-}
-
-// boolPtr returns a pointer to a bool value
-func boolPtr(b bool) *bool {
-	return &b
 }
