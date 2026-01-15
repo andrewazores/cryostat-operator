@@ -60,7 +60,7 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 		// This ConfigMap will be orphaned and cleaned up by the controller
 		// once the actual pod name is known
 		osUtils := &common.DefaultOSUtils{}
-		cmName = fmt.Sprintf("%s%s-%s", DiscoveryConfigMapPrefix, pod.GenerateName, osUtils.GenPasswd(5))
+		cmName = fmt.Sprintf("%s%s%s", DiscoveryConfigMapPrefix, pod.GenerateName, osUtils.GenPasswd(5))
 	} else {
 		return nil, fmt.Errorf("pod has neither Name nor GenerateName set")
 	}
