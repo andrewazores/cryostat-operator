@@ -73,15 +73,19 @@ func (o *DefaultOSUtils) GetFileContents(path string) ([]byte, error) {
 	return ioutil.ReadFile(path)
 }
 
-// GenPasswd generates a psuedorandom password of a given length.
-func (o *DefaultOSUtils) GenPasswd(length int) string {
+// GenRandomString generates a pseudorandom string of a given length using the specified character set.
+func (o *DefaultOSUtils) GenRandomString(length int, chars string) string {
 	rand.Seed(time.Now().UnixNano())
-	chars := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 	b := make([]byte, length)
 	for i := range b {
 		b[i] = chars[rand.Intn(len(chars))]
 	}
 	return string(b)
+}
+
+// GenPasswd generates a pseudorandom password of a given length.
+func (o *DefaultOSUtils) GenPasswd(length int) string {
+	return o.GenRandomString(length, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
 }
 
 // ClusterUniqueName returns a name for cluster-scoped objects that is
