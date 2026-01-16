@@ -62,6 +62,9 @@ func (r *DiscoveryConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.R
 	//         cryostat-agent-discovery-{pod-generateName}-{random-suffix}
 	nameWithoutPrefix := strings.TrimPrefix(configMap.Name, agent.DiscoveryConfigMapPrefix)
 	if nameWithoutPrefix == configMap.Name {
+		// somehow we observed a ConfigMap with our expected component label but with a name
+		// that does not match the expected convention. We can't process this, so just ignore it.
+		// The ConfigMap will stick around as an orphan after the Pod is deleted.
 		log.Info("ConfigMap name doesn't match expected format", "name", configMap.Name)
 		return ctrl.Result{}, nil
 	}
@@ -74,39 +77,39 @@ func (r *DiscoveryConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.R
 		Namespace: configMap.Namespace,
 	}, pod)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			lastHyphen := strings.LastIndex(podName, "-")
-			if lastHyphen > 0 {
-				potentialGenerateName := podName[:lastHyphen+1]
-
-				podList := &corev1.PodList{}
-				if err := r.List(ctx, podList, client.InNamespace(configMap.Namespace)); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to list pods: %w", err)
-				}
-
-				var foundPod *corev1.Pod
-				for i := range podList.Items {
-					p := &podList.Items[i]
-					if strings.HasPrefix(p.Name, potentialGenerateName) {
-						foundPod = p
-						break
-					}
-				}
-
-				if foundPod != nil {
-					pod = foundPod
-					log.Info("Found pod by GenerateName prefix", "configMap", configMap.Name, "pod", pod.Name)
-				} else {
-					log.Info("Pod not found yet, will retry", "expectedName", podName, "generateNamePrefix", potentialGenerateName)
-					return ctrl.Result{Requeue: true}, nil
-				}
-			} else {
-				log.Info("Pod not found yet, will retry", "pod", podName)
-				return ctrl.Result{Requeue: true}, nil
-			}
-		} else {
+		if !errors.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}
+
+		lastHyphen := strings.LastIndex(podName, "-")
+		if lastHyphen <= 0 {
+			log.V(1).Info("Pod not found yet, will retry", "pod", podName)
+			return ctrl.Result{Requeue: true}, nil
+		}
+
+		potentialGenerateName := podName[:lastHyphen+1]
+
+		podList := &corev1.PodList{}
+		if err := r.List(ctx, podList, client.InNamespace(configMap.Namespace)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list pods: %w", err)
+		}
+
+		var foundPod *corev1.Pod
+		for i := range podList.Items {
+			p := &podList.Items[i]
+			if strings.HasPrefix(p.Name, potentialGenerateName) {
+				foundPod = p
+				break
+			}
+		}
+
+		if foundPod == nil {
+			log.V(1).Info("Pod not found yet, will retry", "expectedName", podName, "generateNamePrefix", potentialGenerateName)
+			return ctrl.Result{Requeue: true}, nil
+		}
+
+		pod = foundPod
+		log.V(2).Info("Found pod by GenerateName prefix", "configMap", configMap.Name, "pod", pod.Name)
 	}
 
 	ownerRef := metav1.OwnerReference{
@@ -122,7 +125,7 @@ func (r *DiscoveryConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("failed to update ConfigMap with owner reference: %w", err)
 	}
 
-	log.Info("Added owner reference to discovery ConfigMap", "configMap", configMap.Name, "pod", pod.Name)
+	log.V(1).Info("Added owner reference to discovery ConfigMap", "configMap", configMap.Name, "pod", pod.Name)
 	return ctrl.Result{}, nil
 }
 

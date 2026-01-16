@@ -244,7 +244,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set up discovery ConfigMap controller
 	discoveryController := &controllers.DiscoveryConfigMapReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),

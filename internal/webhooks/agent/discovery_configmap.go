@@ -29,6 +29,7 @@ import (
 const (
 	lowerAlphanumerics = "abcdefghijklmnopqrstuvwxyz0123456789"
 	randomSuffixLength = 5
+	nameLengthLimit    = 253
 )
 
 // createDiscoveryConfigMap creates a ConfigMap containing hierarchy.json and metadata.json
@@ -63,12 +64,15 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 		// This ConfigMap will be orphaned and cleaned up by the controller
 		// once the actual pod name is known
 		osUtils := &common.DefaultOSUtils{}
-		cmName = fmt.Sprintf("%s%s%s", DiscoveryConfigMapPrefix, pod.GenerateName, osUtils.GenRandomString(randomSuffixLength, lowerAlphanumerics))
+		cmName = fmt.Sprintf("%s%s%s",
+			DiscoveryConfigMapPrefix,
+			pod.GenerateName,
+			osUtils.GenRandomString(randomSuffixLength, lowerAlphanumerics),
+		)
 	} else {
 		return nil, fmt.Errorf("pod has neither Name nor GenerateName set")
 	}
 
-	const nameLengthLimit = 253
 	if len(cmName) > nameLengthLimit {
 		cmName = cmName[:nameLengthLimit]
 		cmName = strings.TrimRight(cmName, "-.")
