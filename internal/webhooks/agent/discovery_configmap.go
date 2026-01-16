@@ -26,10 +26,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	lowerAlphanumerics = "abcdefghijklmnopqrstuvwxyz0123456789"
+	randomSuffixLength = 5
+)
+
 // createDiscoveryConfigMap creates a ConfigMap containing hierarchy.json and metadata.json
 // for the Cryostat Agent to read. The ConfigMap is created without an owner reference since
-// the Pod doesn't exist yet during webhook mutation. A controller should add the owner reference
-// after the Pod is created.
+// the Pod doesn't exist yet during webhook mutation.
 func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.Pod, addOwnerRef bool) (*corev1.ConfigMap, error) {
 	hierarchy, err := buildDiscoveryHierarchy(ctx, c, pod)
 	if err != nil {
@@ -48,7 +52,6 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	// Generate ConfigMap name
 	// Format: cryostat-agent-discovery-{pod-name}
 	// If pod.Name is empty (during webhook mutation before pod creation),
 	// use GenerateName with a random suffix
@@ -60,8 +63,7 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 		// This ConfigMap will be orphaned and cleaned up by the controller
 		// once the actual pod name is known
 		osUtils := &common.DefaultOSUtils{}
-		// Use only lowercase alphanumeric characters for Kubernetes name compliance
-		cmName = fmt.Sprintf("%s%s-%s", DiscoveryConfigMapPrefix, pod.GenerateName, osUtils.GenRandomString(5, "abcdefghijklmnopqrstuvwxyz0123456789"))
+		cmName = fmt.Sprintf("%s%s%s", DiscoveryConfigMapPrefix, pod.GenerateName, osUtils.GenRandomString(randomSuffixLength, lowerAlphanumerics))
 	} else {
 		return nil, fmt.Errorf("pod has neither Name nor GenerateName set")
 	}
