@@ -28,6 +28,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 // DiscoveryConfigMapReconciler reconciles discovery ConfigMaps to add owner references
@@ -50,10 +51,6 @@ func (r *DiscoveryConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
-	}
-
-	if configMap.Labels["app.kubernetes.io/component"] != agent.DiscoveryConfigMapComponent {
-		return ctrl.Result{}, nil
 	}
 
 	if len(configMap.OwnerReferences) > 0 {
@@ -80,7 +77,7 @@ func (r *DiscoveryConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if errors.IsNotFound(err) {
 			lastHyphen := strings.LastIndex(podName, "-")
 			if lastHyphen > 0 {
-				potentialGenerateName := podName[:lastHyphen+1] // Include the trailing hyphen
+				potentialGenerateName := podName[:lastHyphen+1]
 
 				podList := &corev1.PodList{}
 				if err := r.List(ctx, podList, client.InNamespace(configMap.Namespace)); err != nil {
@@ -130,7 +127,16 @@ func (r *DiscoveryConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func (r *DiscoveryConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	labelPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		labels := obj.GetLabels()
+		if labels == nil {
+			return false
+		}
+		return labels["app.kubernetes.io/component"] == agent.DiscoveryConfigMapComponent
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}).
+		WithEventFilter(labelPredicate).
 		Complete(r)
 }
