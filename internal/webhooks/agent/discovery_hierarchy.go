@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cryostatio/cryostat-operator/internal/controllers/common/resource_definitions"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -30,7 +31,7 @@ import (
 
 // getOwnerNode recursively chases owner references to find the controlling resource.
 // This matches Cryostat's getOwnerNode() algorithm:
-// https://github.com/cryostatio/cryostat/blob/main/src/main/java/io/cryostat/discovery/KubeEndpointSlicesDiscovery.java#L523-L541
+// https://github.com/cryostatio/cryostat/blob/4adcb762b45a37c741a7848c735f7c5b80bd2256/src/main/java/io/cryostat/discovery/KubeEndpointSlicesDiscovery.java#L523-L541
 // 1. Take first "expected" owner Kind from ExpectedOwnerKinds
 // 2. If none match, use first owner
 // 3. Return nil if no owners (breaks the chain)
@@ -42,7 +43,6 @@ func getOwnerNode(
 ) (*DiscoveryNode, error) {
 	owners := obj.GetOwnerReferences()
 
-	// No owners - end of chain
 	if len(owners) == 0 {
 		return nil, nil
 	}
@@ -61,18 +61,13 @@ func getOwnerNode(
 		}
 	}
 
-	// No expected kind found, use first owner
 	if selectedOwner == nil {
 		selectedOwner = &owners[0]
 	}
 
-	// Query for the owner resource
 	return queryForNode(ctx, c, namespace, selectedOwner.Name, selectedOwner.Kind)
 }
 
-// queryForNode fetches a Kubernetes resource and creates a DiscoveryNode for it.
-// Matches Cryostat's queryForNode() function:
-// https://github.com/cryostatio/cryostat/blob/main/src/main/java/io/cryostat/discovery/KubeEndpointSlicesDiscovery.java#L543-L565
 func queryForNode(
 	ctx context.Context,
 	c client.Client,
@@ -155,27 +150,15 @@ func queryForNode(
 	node := &DiscoveryNode{
 		Name:     name,
 		NodeType: string(nodeType),
-		Labels:   copyLabels(labels),
+		Labels:   resource_definitions.CreateMapCopy(labels),
 		Children: []DiscoveryNode{},
 	}
 
 	return node, nil
 }
 
-func copyLabels(labels map[string]string) map[string]string {
-	if labels == nil {
-		return make(map[string]string)
-	}
-	copy := make(map[string]string, len(labels))
-	for k, v := range labels {
-		copy[k] = v
-	}
-	return copy
-}
-
 // buildDiscoveryHierarchy constructs the complete discovery hierarchy for a Pod.
 // Returns a tree structure: Namespace → [Deployment/StatefulSet/etc] → ... → Pod
-// This matches Cryostat's discovery model where the root is always the Namespace.
 func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.Pod) (*DiscoveryNode, error) {
 	podName := pod.Name
 	if podName == "" {
@@ -190,15 +173,14 @@ func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.P
 		return nil, fmt.Errorf("pod namespace cannot be empty for pod %s", podName)
 	}
 
-	// Build chain from Pod up to top-level owner
 	chain := []*DiscoveryNode{}
 
 	// Start with the Pod itself
 	podNode := &DiscoveryNode{
 		Name:     podName,
 		NodeType: string(KubeNodeTypePod),
-		Labels:   copyLabels(pod.Labels),
-		Children: []DiscoveryNode{}, // Empty array, not nil
+		Labels:   resource_definitions.CreateMapCopy(pod.Labels),
+		Children: []DiscoveryNode{},
 	}
 	chain = append(chain, podNode)
 
@@ -210,15 +192,11 @@ func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.P
 			return nil, err
 		}
 		if ownerNode == nil {
-			// No more owners - end of chain
 			break
 		}
 
-		// Add owner to chain
 		chain = append(chain, ownerNode)
 
-		// Continue from this owner
-		// We need to fetch the actual object to get its owner references
 		var nextObj metav1.Object
 		switch ownerNode.NodeType {
 		case string(KubeNodeTypeDeployment):
@@ -226,7 +204,6 @@ func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.P
 			err := c.Get(ctx, types.NamespacedName{Name: ownerNode.Name, Namespace: pod.Namespace}, deployment)
 			if err != nil {
 				if errors.IsNotFound(err) {
-					// Owner was deleted - stop here
 					break
 				}
 				return nil, err
@@ -293,8 +270,7 @@ func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.P
 			}
 			nextObj = endpointSlice
 		default:
-			// Unknown type - stop here
-			break
+			nextObj = nil
 		}
 
 		if nextObj == nil {
@@ -303,33 +279,26 @@ func buildDiscoveryHierarchy(ctx context.Context, c client.Client, pod *corev1.P
 		currentObj = nextObj
 	}
 
-	// Fetch Namespace to get its labels
 	namespace := &corev1.Namespace{}
 	err := c.Get(ctx, types.NamespacedName{Name: pod.Namespace}, namespace)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create Namespace node as root
 	namespaceNode := &DiscoveryNode{
 		Name:     namespace.Name,
 		NodeType: string(KubeNodeTypeNamespace),
-		Labels:   copyLabels(namespace.Labels),
+		Labels:   resource_definitions.CreateMapCopy(namespace.Labels),
 		Children: []DiscoveryNode{},
 	}
 
-	// Build hierarchy from top (Namespace) down to Pod
-	// Chain is currently: [Pod, ReplicaSet, Deployment, ...]
-	// We need to reverse it and nest: Namespace → Deployment → ReplicaSet → Pod
 	currentNode := namespaceNode
 	for i := len(chain) - 1; i >= 0; i-- {
 		childNode := chain[i]
-		// Initialize Children array if needed
 		if childNode.Children == nil {
 			childNode.Children = []DiscoveryNode{}
 		}
 		currentNode.Children = append(currentNode.Children, *childNode)
-		// Move to the child for next iteration
 		if len(currentNode.Children) > 0 {
 			currentNode = &currentNode.Children[len(currentNode.Children)-1]
 		}

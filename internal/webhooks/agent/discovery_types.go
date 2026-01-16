@@ -16,28 +16,19 @@ package agent
 
 // Discovery ConfigMap constants
 const (
-	// DiscoveryConfigMapComponent is the component label value for discovery ConfigMaps
 	DiscoveryConfigMapComponent = "cryostat-agent-discovery"
-
-	// DiscoveryConfigMapPrefix is the prefix for discovery ConfigMap names
-	DiscoveryConfigMapPrefix = DiscoveryConfigMapComponent + "-"
-
-	// DiscoveryConfigMapManagedBy is the managed-by label value for discovery ConfigMaps
+	DiscoveryConfigMapPrefix    = DiscoveryConfigMapComponent + "-"
 	DiscoveryConfigMapManagedBy = "cryostat-operator"
 )
 
 // DiscoveryMetadata represents metadata (labels and annotations) that should be
-// applied to the Agent's DiscoveryNode. This matches the format expected by the
-// Cryostat Agent's DiscoveryFileReader, which will apply these to its internal
-// cryostat and platform maps as needed.
+// applied to the Agent's DiscoveryNode.
 type DiscoveryMetadata struct {
 	Labels      map[string]string `json:"labels"`
 	Annotations map[string]string `json:"annotations"`
 }
 
 // DiscoveryNode represents a node in the discovery tree hierarchy.
-// This structure matches Cryostat's DiscoveryNode data model exactly to ensure
-// compatibility with the Agent's discovery file reader and Cryostat's discovery system.
 type DiscoveryNode struct {
 	Name     string            `json:"name"`
 	NodeType string            `json:"nodeType"`
@@ -46,27 +37,21 @@ type DiscoveryNode struct {
 }
 
 // KubeNodeType represents Kubernetes resource types in the discovery hierarchy.
-// These match Cryostat's KubeDiscoveryNodeType enum values exactly.
-// Reference: https://github.com/cryostatio/cryostat/blob/main/src/main/java/io/cryostat/discovery/KubeDiscoveryNodeType.java
 type KubeNodeType string
 
 const (
-	// Cryostat's exact enum values for Kubernetes resources
-	KubeNodeTypeNamespace             KubeNodeType = "Namespace"             // Kubernetes Namespace
-	KubeNodeTypeStatefulSet           KubeNodeType = "StatefulSet"           // StatefulSet
-	KubeNodeTypeDaemonSet             KubeNodeType = "DaemonSet"             // DaemonSet
-	KubeNodeTypeDeployment            KubeNodeType = "Deployment"            // Deployment
-	KubeNodeTypeReplicaSet            KubeNodeType = "ReplicaSet"            // ReplicaSet
-	KubeNodeTypeReplicationController KubeNodeType = "ReplicationController" // ReplicationController
-	KubeNodeTypePod                   KubeNodeType = "Pod"                   // Pod with JVM
-	KubeNodeTypeDeploymentConfig      KubeNodeType = "DeploymentConfig"      // OpenShift DeploymentConfig
-	KubeNodeTypeEndpoint              KubeNodeType = "Endpoint"              // Kubernetes Endpoint
-	KubeNodeTypeEndpointSlice         KubeNodeType = "EndpointSlice"         // Kubernetes EndpointSlice
+	KubeNodeTypeNamespace             KubeNodeType = "Namespace"
+	KubeNodeTypeStatefulSet           KubeNodeType = "StatefulSet"
+	KubeNodeTypeDaemonSet             KubeNodeType = "DaemonSet"
+	KubeNodeTypeDeployment            KubeNodeType = "Deployment"
+	KubeNodeTypeReplicaSet            KubeNodeType = "ReplicaSet"
+	KubeNodeTypeReplicationController KubeNodeType = "ReplicationController"
+	KubeNodeTypePod                   KubeNodeType = "Pod"
+	KubeNodeTypeDeploymentConfig      KubeNodeType = "DeploymentConfig"
+	KubeNodeTypeEndpoint              KubeNodeType = "Endpoint"
+	KubeNodeTypeEndpointSlice         KubeNodeType = "EndpointSlice"
 )
 
-// ExpectedOwnerKinds defines the priority order for selecting owner references
-// when multiple owners exist. This matches Cryostat's logic of taking the first
-// "expected" owner Kind from known NodeTypes.
 var ExpectedOwnerKinds = []KubeNodeType{
 	KubeNodeTypeDeployment,
 	KubeNodeTypeStatefulSet,

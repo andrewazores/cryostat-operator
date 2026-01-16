@@ -393,6 +393,17 @@ func TestQueryForNode_UnknownKind(t *testing.T) {
 	}
 }
 
+func copyLabels(labels map[string]string) map[string]string {
+	if labels == nil {
+		return make(map[string]string)
+	}
+	copy := make(map[string]string, len(labels))
+	for k, v := range labels {
+		copy[k] = v
+	}
+	return copy
+}
+
 func TestCopyLabels_NilInput(t *testing.T) {
 	result := copyLabels(nil)
 

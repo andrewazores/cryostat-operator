@@ -372,21 +372,16 @@ func (r *podMutator) Default(ctx context.Context, obj runtime.Object) error {
 	}
 	container.Env = extended
 
-	// Create discovery ConfigMap for the Agent
 	discoveryConfigMap, err := createDiscoveryConfigMap(ctx, r.client, pod)
 	if err != nil {
 		return fmt.Errorf("failed to create discovery ConfigMap: %w", err)
 	}
 
-	// Create or update the ConfigMap
 	err = r.client.Create(ctx, discoveryConfigMap)
 	if err != nil {
-		// If it already exists, that's okay - it might be from a previous attempt
-		// We'll just use the existing one
-		r.log.Info("discovery ConfigMap may already exist, continuing", "name", discoveryConfigMap.Name, "error", err)
+		r.log.Info("discovery ConfigMap already exists, continuing", "name", discoveryConfigMap.Name, "error", err)
 	}
 
-	// Mount the discovery ConfigMap as a volume
 	readOnlyMode := int32(0440)
 	pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
 		Name: "cryostat-agent-discovery",

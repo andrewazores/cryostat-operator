@@ -113,8 +113,11 @@ const (
 	SecretMountPrefix                 string = "/var/run/secrets/operator.cryostat.io"
 )
 
-func createMapCopy(in map[string]string) map[string]string {
-	copy := make(map[string]string)
+func CreateMapCopy(in map[string]string) map[string]string {
+	if in == nil {
+		return make(map[string]string)
+	}
+	copy := make(map[string]string, len(in))
 	for k, v := range in {
 		copy[k] = v
 	}
@@ -126,8 +129,8 @@ func createMetadataCopy(in *operatorv1beta2.ResourceMetadata) operatorv1beta2.Re
 		return operatorv1beta2.ResourceMetadata{}
 	}
 	return operatorv1beta2.ResourceMetadata{
-		Labels:      createMapCopy(in.Labels),
-		Annotations: createMapCopy(in.Annotations),
+		Labels:      CreateMapCopy(in.Labels),
+		Annotations: CreateMapCopy(in.Annotations),
 	}
 }
 
