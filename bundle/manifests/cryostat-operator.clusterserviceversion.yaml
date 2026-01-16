@@ -24,7 +24,7 @@ metadata:
     capabilities: Seamless Upgrades
     categories: Monitoring, Developer Tools
     containerImage: quay.io/cryostat/cryostat-operator:4.2.0-dev
-    createdAt: "2025-10-30T18:47:04Z"
+    createdAt: "2026-01-16T18:54:45Z"
     description: JVM monitoring and profiling tool
     operatorframework.io/initialization-resource: |-
       {
@@ -1090,9 +1090,19 @@ spec:
                 - ""
               resources:
                 - configmaps
+              verbs:
+                - '*'
+                - create
+                - get
+                - list
+                - patch
+                - update
+                - watch
+            - apiGroups:
+                - ""
+              resources:
                 - events
                 - persistentvolumeclaims
-                - pods
                 - secrets
                 - serviceaccounts
                 - services
@@ -1104,6 +1114,15 @@ spec:
               resources:
                 - namespaces
               verbs:
+                - get
+                - list
+                - watch
+            - apiGroups:
+                - ""
+              resources:
+                - pods
+              verbs:
+                - '*'
                 - get
                 - list
                 - watch
