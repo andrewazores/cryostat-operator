@@ -373,7 +373,7 @@ func (r *podMutator) Default(ctx context.Context, obj runtime.Object) error {
 	container.Env = extended
 
 	// Create discovery ConfigMap for the Agent
-	discoveryConfigMap, err := createDiscoveryConfigMap(ctx, r.client, pod, false)
+	discoveryConfigMap, err := createDiscoveryConfigMap(ctx, r.client, pod)
 	if err != nil {
 		return fmt.Errorf("failed to create discovery ConfigMap: %w", err)
 	}

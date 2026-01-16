@@ -56,7 +56,7 @@ func TestCreateDiscoveryConfigMap_Success(t *testing.T) {
 		WithObjects(namespace, pod).
 		Build()
 
-	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod, true)
+	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -88,22 +88,6 @@ func TestCreateDiscoveryConfigMap_Success(t *testing.T) {
 
 	if _, exists := cm.Data["metadata.json"]; !exists {
 		t.Error("Expected metadata.json in ConfigMap data")
-	}
-
-	// Verify OwnerReference
-	if len(cm.OwnerReferences) != 1 {
-		t.Fatalf("Expected 1 owner reference, got %d", len(cm.OwnerReferences))
-	}
-
-	owner := cm.OwnerReferences[0]
-	if owner.Kind != "Pod" {
-		t.Errorf("Expected owner kind 'Pod', got '%s'", owner.Kind)
-	}
-	if owner.Name != "test-pod" {
-		t.Errorf("Expected owner name 'test-pod', got '%s'", owner.Name)
-	}
-	if owner.UID != "pod-uid-123" {
-		t.Errorf("Expected owner UID 'pod-uid-123', got '%s'", owner.UID)
 	}
 }
 
@@ -150,7 +134,7 @@ func TestCreateDiscoveryConfigMap_ValidJSON(t *testing.T) {
 		WithObjects(namespace, deployment, pod).
 		Build()
 
-	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod, true)
+	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -204,7 +188,7 @@ func TestCreateDiscoveryConfigMap_Naming(t *testing.T) {
 		WithObjects(namespace, pod).
 		Build()
 
-	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod, true)
+	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -245,7 +229,7 @@ func TestCreateDiscoveryConfigMap_EmptyMetadata(t *testing.T) {
 		WithObjects(namespace, pod).
 		Build()
 
-	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod, true)
+	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -346,7 +330,7 @@ func TestCreateDiscoveryConfigMap_DeepHierarchy(t *testing.T) {
 		WithObjects(namespace, deployment, replicaSet, pod).
 		Build()
 
-	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod, true)
+	cm, err := createDiscoveryConfigMap(context.Background(), fakeClient, pod)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -464,16 +448,5 @@ func TestCreateDiscoveryConfigMap_DeepHierarchy(t *testing.T) {
 	}
 	if cm.Namespace != "production" {
 		t.Errorf("Expected ConfigMap namespace 'production', got '%s'", cm.Namespace)
-	}
-
-	// Verify OwnerReference points to Pod
-	if len(cm.OwnerReferences) != 1 {
-		t.Fatalf("Expected 1 owner reference, got %d", len(cm.OwnerReferences))
-	}
-	if cm.OwnerReferences[0].Name != "backend-api-7f8c9d-xk2lp" {
-		t.Errorf("Expected owner name 'backend-api-7f8c9d-xk2lp', got '%s'", cm.OwnerReferences[0].Name)
-	}
-	if cm.OwnerReferences[0].UID != "pod-uid-abc" {
-		t.Errorf("Expected owner UID 'pod-uid-abc', got '%s'", cm.OwnerReferences[0].UID)
 	}
 }

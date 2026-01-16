@@ -35,7 +35,7 @@ const (
 // createDiscoveryConfigMap creates a ConfigMap containing hierarchy.json and metadata.json
 // for the Cryostat Agent to read. The ConfigMap is created without an owner reference since
 // the Pod doesn't exist yet during webhook mutation.
-func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.Pod, addOwnerRef bool) (*corev1.ConfigMap, error) {
+func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.Pod) (*corev1.ConfigMap, error) {
 	hierarchy, err := buildDiscoveryHierarchy(ctx, c, pod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build discovery hierarchy: %w", err)
@@ -91,19 +91,6 @@ func createDiscoveryConfigMap(ctx context.Context, c client.Client, pod *corev1.
 			"hierarchy.json": string(hierarchyJSON),
 			"metadata.json":  string(metadataJSON),
 		},
-	}
-
-	if addOwnerRef && pod.UID != "" {
-		controller := true
-		cm.OwnerReferences = []metav1.OwnerReference{
-			{
-				APIVersion: "v1",
-				Kind:       "Pod",
-				Name:       pod.Name,
-				UID:        pod.UID,
-				Controller: &controller,
-			},
-		}
 	}
 
 	return cm, nil
