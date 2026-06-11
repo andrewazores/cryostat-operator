@@ -4,6 +4,11 @@ kind: Deployment
 metadata:
   labels:
     app: quarkus-cryostat-agent-injected
+    cryostat.io/name: cryostat-sample
+    cryostat.io/namespace: cryostat-operator-system
+    cryostat.io/harvester-template: Continuous
+    cryostat.io/harvester-period: 5m
+    cryostat.io/harvester-max-files: '6'
   name: quarkus-cryostat-agent-injected
 spec:
   replicas: 1
@@ -14,8 +19,6 @@ spec:
     metadata:
       labels:
         app: quarkus-cryostat-agent-injected
-        cryostat.io/name: cryostat-sample
-        cryostat.io/namespace: cryostat-operator-system
     spec:
       containers:
       - env:
