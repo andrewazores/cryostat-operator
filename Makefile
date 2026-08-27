@@ -127,12 +127,40 @@ GOLANGCI_LINT_VERSION ?= 2.1.0
 # See: https://github.com/operator-framework/operator-sdk/pull/4762
 #
 # Suffix is the timestamp of the image build, compute with: date -u '+%Y%m%d%H%M%S'
-CUSTOM_SCORECARD_VERSION ?= 4.3.0-$(shell date -u '+%Y%m%d%H%M%S')
+# Assigned with := (once per make invocation) rather than a recursively-expanded default
+# so the timestamp stays stable across recipes in a single run (e.g. scorecard-build ->
+# bundle -> test-load-scorecard-images -> test-scorecard). Still overridable via the
+# environment or command line.
+ifeq ($(origin CUSTOM_SCORECARD_VERSION), undefined)
+CUSTOM_SCORECARD_VERSION := 4.3.0-$(shell date -u '+%Y%m%d%H%M%S')
+endif
 export CUSTOM_SCORECARD_IMG ?= $(IMAGE_TAG_BASE)-scorecard:$(CUSTOM_SCORECARD_VERSION)
 
 DEPLOY_NAMESPACE ?= cryostat-operator-system
 TARGET_NAMESPACES ?= $(DEPLOY_NAMESPACE) # A space-separated list of target namespaces
 SCORECARD_NAMESPACE ?= cryostat-operator-scorecard
+
+# Hostname of the OpenShift internal image registry, as seen from inside the cluster.
+# Used by 'make test-load-scorecard-images' to avoid pushing to an external registry.
+INTERNAL_REGISTRY_HOSTNAME ?= image-registry.openshift-image-registry.svc:5000
+# OpenShift project holding the loaded scorecard images. It persists across scorecard
+# runs (unlike SCORECARD_NAMESPACE, which is created/destroyed per run). Override to
+# reuse an existing project, e.g. CUSTOM_SCORECARD_IMAGE_NAMESPACE=$(oc project -q)
+CUSTOM_SCORECARD_IMAGE_NAMESPACE ?= cryostat-operator-scorecard-images
+# Images loaded by 'make test-load-scorecard-images'. The custom-scorecard image is
+# only pulled in-cluster by 'make test-scorecard'; 'make test-scorecard-local' runs the
+# custom tests locally, so you may drop it there to skip building/loading it.
+SCORECARD_LOAD_IMAGES ?= $(OPERATOR_IMG) $(BUNDLE_IMG) $(CUSTOM_SCORECARD_IMG)
+# IMAGE_NAMESPACE value that points image references at the OpenShift internal registry,
+# so images loaded by 'make test-load-scorecard-images' are the ones the cluster pulls.
+SCORECARD_INTERNAL_IMAGE_NAMESPACE ?= $(INTERNAL_REGISTRY_HOSTNAME)/$(CUSTOM_SCORECARD_IMAGE_NAMESPACE)
+# Set to false to skip TLS verification when pushing to the registry route, e.g. on CRC
+# where the route uses a self-signed certificate (podman/buildah only).
+TLS_VERIFY ?=
+# Extra flags appended to 'operator-sdk run bundle'. Empty by default so the standard
+# workflow is unchanged; the loaded workflow sets --skip-tls-verify for the internal
+# registry route's self-signed certificate.
+SCORECARD_RUN_BUNDLE_EXTRA_ARGS ?=
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -252,6 +280,57 @@ endif
 clean-scorecard: operator-sdk ## Clean up scorecard resources.
 	- $(call scorecard-cleanup); cleanup
 
+# These targets talk to the OpenShift internal registry and require the 'oc' client.
+define require-oc
+@if [ "$(CLUSTER_CLIENT)" != "oc" ]; then \
+	echo "ERROR: $@ requires an OpenShift cluster. Re-run with CLUSTER_CLIENT=oc." >&2; \
+	exit 1; \
+fi
+endef
+
+.PHONY: test-load-scorecard-images
+test-load-scorecard-images: ## Load scorecard images into the OpenShift internal registry (no external registry needed).
+	$(call require-oc)
+	oc get namespace $(CUSTOM_SCORECARD_IMAGE_NAMESPACE) >/dev/null 2>&1 || \
+		oc create namespace $(CUSTOM_SCORECARD_IMAGE_NAMESPACE)
+# Allow any authenticated service account (e.g. the per-run scorecard namespace) to pull these images.
+	oc policy add-role-to-group system:image-puller system:authenticated \
+		--namespace=$(CUSTOM_SCORECARD_IMAGE_NAMESPACE)
+	NAMESPACE=$(CUSTOM_SCORECARD_IMAGE_NAMESPACE) DOCKER=$(IMAGE_BUILDER) TLS_VERIFY=$(TLS_VERIFY) \
+		./hack/openshift-load $(SCORECARD_LOAD_IMAGES)
+
+.PHONY: clean-scorecard-images
+clean-scorecard-images: ## Delete the loaded scorecard images and their namespace.
+	$(call require-oc)
+	- oc delete namespace $(CUSTOM_SCORECARD_IMAGE_NAMESPACE)
+
+.PHONY: test-scorecard-local-loaded
+test-scorecard-local-loaded: ## Build, load into the OpenShift internal registry, and run scorecard tests locally (no external registry).
+	$(call require-oc)
+# The operator image is referenced (and pulled in-cluster) by its internal service address,
+# but the bundle image is also pulled client-side by 'operator-sdk run bundle' and in-cluster
+# by OLM's unpack job, so it must use the externally-routable registry hostname. That route
+# uses a self-signed cert and requires auth, hence --skip-tls-verify and the pull secret
+# supplied via SCORECARD_REGISTRY_*.
+	@route=$$(oc get route default-route -n openshift-image-registry --template='{{.spec.host}}' 2>/dev/null || true); \
+	if [ -z "$$route" ]; then \
+		echo "Enabling internal registry default route..."; \
+		oc patch configs.imageregistry.operator.openshift.io/cluster --type merge -p '{"spec":{"defaultRoute":true}}'; \
+		for i in $$(seq 1 20); do route=$$(oc get route default-route -n openshift-image-registry --template='{{.spec.host}}' 2>/dev/null || true); [ -n "$$route" ] && break; sleep 3; done; \
+	fi; \
+	[ -n "$$route" ] || { echo "ERROR: could not determine internal registry route" >&2; exit 1; }; \
+	echo "Using internal registry route: $$route"; \
+	$(MAKE) IMAGE_NAMESPACE=$(SCORECARD_INTERNAL_IMAGE_NAMESPACE) \
+		TLS_VERIFY=false \
+		BUNDLE_IMG=$$route/$(CUSTOM_SCORECARD_IMAGE_NAMESPACE)/$(OPERATOR_NAME)-bundle:$(BUNDLE_VERSION) \
+		SCORECARD_REGISTRY_SERVER=$$route \
+		SCORECARD_REGISTRY_USERNAME=$$(oc whoami) \
+		SCORECARD_REGISTRY_PASSWORD=$$(oc whoami --show-token) \
+		SCORECARD_RUN_BUNDLE_EXTRA_ARGS=--skip-tls-verify \
+		oci-build bundle bundle-build \
+		test-load-scorecard-images 'SCORECARD_LOAD_IMAGES=$$(OPERATOR_IMG) $$(BUNDLE_IMG)' \
+		test-scorecard-local
+
 ifneq ($(and $(SCORECARD_REGISTRY_SERVER),$(SCORECARD_REGISTRY_USERNAME),$(SCORECARD_REGISTRY_PASSWORD)),)
 SCORECARD_ARGS := --pull-secret-name registry-key --service-account cryostat-scorecard
 endif
@@ -268,7 +347,7 @@ $(KUSTOMIZE) build internal/images/custom-scorecard-tests/rbac/ | $(CLUSTER_CLIE
 		--docker-username="$(SCORECARD_REGISTRY_USERNAME)" --docker-password="$(SCORECARD_REGISTRY_PASSWORD)"; \
 	$(CLUSTER_CLIENT) patch sa cryostat-scorecard -n $(SCORECARD_NAMESPACE) -p '{"imagePullSecrets": [{"name": "registry-key"}]}'; \
 fi
-$(OPERATOR_SDK) run bundle -n $(SCORECARD_NAMESPACE) --timeout 20m $(BUNDLE_IMG) --security-context-config=restricted --verbose $(SCORECARD_ARGS)
+$(OPERATOR_SDK) run bundle -n $(SCORECARD_NAMESPACE) --timeout 20m $(BUNDLE_IMG) --security-context-config=restricted --verbose $(SCORECARD_ARGS) $(SCORECARD_RUN_BUNDLE_EXTRA_ARGS)
 endef
 
 define scorecard-cleanup

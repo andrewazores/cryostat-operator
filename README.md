@@ -228,3 +228,74 @@ Before the scorecard tests are run, all cryostat and cryostat-operator
 resources will be deleted to ensure a clean slate.
 
 `make test` will run all tests.
+
+#### Running scorecard tests without an external registry (OpenShift)
+
+Normally the operator, bundle, and custom-scorecard images must be pushed to a
+registry the cluster can reach (e.g. `quay.io`). On OpenShift you can instead load
+locally-built images straight into the cluster's internal registry, avoiding any
+external push. This requires the `oc` client (`CLUSTER_CLIENT=oc`).
+
+The recommended entry point is `make test-scorecard-local-loaded`, which builds the
+operator and bundle images, loads them into the internal registry, and runs
+`make test-scorecard-local` against them (the custom scorecard tests run locally, so the
+custom-scorecard image is not needed in-cluster):
+
+```
+CLUSTER_CLIENT=oc SCORECARD_TEST_SELECTION=cryostat-recording \
+    make test-scorecard-local-loaded
+```
+
+Loaded images are stored in a persistent project (`CUSTOM_SCORECARD_IMAGE_NAMESPACE`,
+default `cryostat-operator-scorecard-images`) so they survive `make clean-scorecard`.
+Use `make clean-scorecard-images` to remove them. To reuse your current project instead,
+override it, e.g. `CUSTOM_SCORECARD_IMAGE_NAMESPACE=$(oc project -q)`.
+
+`make test-load-scorecard-images` is the underlying loader: it pushes the images in
+`SCORECARD_LOAD_IMAGES` into the internal registry via `hack/openshift-load`. On clusters
+whose registry route has a self-signed certificate (e.g. CRC), pass `TLS_VERIFY=false`.
+
+How the addresses work (handled automatically by `test-scorecard-local-loaded`):
+
+- The **operator** and **custom-scorecard** images are pulled only in-cluster, so they
+  are referenced by the registry's internal service address
+  (`image-registry.openshift-image-registry.svc:5000/...`), set via `IMAGE_NAMESPACE`.
+  In-cluster pulls from that address are authorized by the service account, so no pull
+  secret is needed (the loader grants `system:image-puller` on the image project).
+- The **bundle** image is different: `operator-sdk run bundle` pulls it *client-side*
+  (to render the catalog) and OLM's unpack job pulls it *in-cluster*. The internal
+  service address is not resolvable off-cluster, so the bundle must be referenced by the
+  registry's external route instead. That route uses a self-signed cert and requires
+  authentication, so the run is given `--skip-tls-verify`
+  (`SCORECARD_RUN_BUNDLE_EXTRA_ARGS`) and a pull secret built from your `oc` credentials
+  (`SCORECARD_REGISTRY_*`). The route and the service address front the same registry, so
+  an image pushed once is reachable by both.
+
+The application images (`CORE_IMG`, `DATABASE_IMG`, etc.) are unaffected and still come
+from `quay.io/cryostat`.
+
+For the full in-cluster suite (`make test-scorecard`) the custom-scorecard image must
+also be built and loaded, and the bundle handled the same way as above. There is no
+dedicated convenience target for it yet; run it as a single `make` invocation (so the
+auto-generated `CUSTOM_SCORECARD_VERSION` timestamp stays consistent across build, load,
+and run) with the bundle pointed at the route and a pull secret supplied:
+
+```
+export CLUSTER_CLIENT=oc
+export IMAGE_NS=cryostat-operator-scorecard-images
+export IMAGE_NAMESPACE=image-registry.openshift-image-registry.svc:5000/$IMAGE_NS
+ROUTE=$(oc get route default-route -n openshift-image-registry --template='{{.spec.host}}')
+make oci-build \
+     scorecard-build MANIFEST_PUSH=false PLATFORMS=linux/amd64 \
+     bundle bundle-build BUNDLE_IMG=$ROUTE/$IMAGE_NS/cryostat-operator-bundle:4.3.0-dev \
+     test-load-scorecard-images TLS_VERIFY=false \
+     test-scorecard \
+       BUNDLE_IMG=$ROUTE/$IMAGE_NS/cryostat-operator-bundle:4.3.0-dev \
+       SCORECARD_REGISTRY_SERVER=$ROUTE \
+       SCORECARD_REGISTRY_USERNAME=$(oc whoami) \
+       SCORECARD_REGISTRY_PASSWORD=$(oc whoami --show-token) \
+       SCORECARD_RUN_BUNDLE_EXTRA_ARGS=--skip-tls-verify
+```
+
+Split this across multiple `make` invocations and you must set a fixed
+`CUSTOM_SCORECARD_VERSION` on each so the built, baked, and loaded image tags agree.
